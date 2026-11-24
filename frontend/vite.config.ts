@@ -7,8 +7,8 @@ import { defineConfig, type Plugin } from 'vite'
 // worklet, onnxruntime WASM). Served at /vad/ straight from node_modules so it
 // all works offline. Not in public/: Vite's dev server won't let onnxruntime
 // import() an .mjs from there.
-const vadDist = join(__dirname, 'node_modules/@ricky0123/vad-web/dist')
-const ortDist = join(__dirname, 'node_modules/onnxruntime-web/dist')
+const vadDist = join(import.meta.dirname, 'node_modules/@ricky0123/vad-web/dist')
+const ortDist = join(import.meta.dirname, 'node_modules/onnxruntime-web/dist')
 const VAD_FILES: Record<string, string> = {
   'vad.worklet.bundle.min.js': join(vadDist, 'vad.worklet.bundle.min.js'),
   'silero_vad_v5.onnx': join(vadDist, 'silero_vad_v5.onnx'),

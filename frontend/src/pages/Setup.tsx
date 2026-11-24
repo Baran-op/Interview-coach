@@ -201,6 +201,8 @@ export default function Setup({ onStart }: Props) {
             }}
           >
             <option value="webcam">Webcam + audio</option>
+            <option value="avatar">Avatar + audio</option>
+            <option value="both">Avatar and webcam side by side</option>
             <option value="audio">Audio only</option>
             <option value="off">Don't record</option>
           </select>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { api, type Expression, type Health, type InterviewEvent, type Pack, type TurnTiming } from '../api'
-import { InterviewerPlayer, type SpokenSentence } from '../audio/player'
+import { InterviewerPlayer, type Speaker, type SpokenSentence } from '../audio/player'
+import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
 import { SessionRecorder, getRecordMode } from '../audio/recorder'
 import { TurnListener } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
@@ -79,7 +80,9 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const [elapsed, setElapsed] = useState(0)
   const [saving, setSaving] = useState<string | null>(null)
   const [camStream, setCamStream] = useState<MediaStream | null>(null)
-  const [recording, setRecording] = useState<'webcam' | 'audio' | null>(null)
+  const [recording, setRecording] = useState<string | null>(null)
+  // The 3D avatar mounts once we know an avatar file exists.
+  const [avatarCtx, setAvatarCtx] = useState<AudioContext | null>(null)
 
   const phaseRef = useRef<Phase>('starting')
   const pausedRef = useRef(false)
@@ -95,11 +98,16 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const bottom = useRef<HTMLDivElement>(null)
   const silenceRef = useRef(silenceMs)
   const recorderRef = useRef<SessionRecorder | null>(null)
+  const avatarRef = useRef<AvatarController | null>(null)
+  const avatarWait = useRef<{ resolve: (ok: boolean) => void } | null>(null)
   const selfView = useRef<HTMLVideoElement>(null)
   // When each turn happened, in ms on the recording's clock (pauses excluded).
   const timeline = useRef(new Map<number, Span>())
   const listenStart = useRef(0)
   const speechStart = useRef<number | null>(null)
+
+  /** Who says the interviewer's lines: the avatar (lip-sync) or the plain player. */
+  const speaker = (): Speaker => avatarRef.current ?? playerRef.current!
 
   const setPhase = (p: Phase) => {
     phaseRef.current = p
@@ -134,6 +142,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     if (phaseRef.current === 'ended') return
     setPhase('ended')
     playerRef.current?.stop()
+    avatarRef.current?.stop()
     await listenerRef.current?.cancel().catch(() => {})
     setMicSpeaking(false)
     if (!id) return
@@ -178,7 +187,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     stream: AsyncGenerator<InterviewEvent>,
     opts: { candidateMsg?: number; turnEndedAt?: number; silenceMs?: number; answerSpan?: Span } = {},
   ) => {
-    const player = playerRef.current!
+    const player = speaker()
     let replyMsg: number | null = null
     let replyTurn: number | null = null
     let replyStart: number | null = null
@@ -197,7 +206,12 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           if (opts.candidateMsg) patchMessage(opts.candidateMsg, () => ({ text: ev.text, pending: false }))
           if (opts.answerSpan) timeline.current.set(ev.turn_idx, opts.answerSpan)
         } else if (ev.type === 'sentence') {
-          const s = { text: ev.text, audioBase64: ev.audio_wav_base64 }
+          const s: SpokenSentence = {
+            text: ev.text,
+            audioBase64: ev.audio_wav_base64,
+            words: ev.word_timings,
+            expressions: ev.expressions,
+          }
           sentences.push(s)
           if (replyMsg === null) {
             replyMsg = addMessage({ speaker: 'interviewer', text: ev.text, expressions: ev.expressions })
@@ -321,8 +335,12 @@ export default function Interview({ pack, onExit, onReview }: Props) {
               onSpeechStart: () => {
                 if (speechStart.current === null) speechStart.current = clockNow()
                 setMicSpeaking(true)
+                avatarRef.current?.setUserSpeaking(true)
               },
-              onSpeechEnd: () => setMicSpeaking(false),
+              onSpeechEnd: () => {
+                setMicSpeaking(false)
+                avatarRef.current?.setUserSpeaking(false)
+              },
             },
             silenceRef.current,
           )
@@ -345,16 +363,28 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           setVoiceNote('Backend not reachable.')
         }
 
-        // Record the whole session (mic + interviewer voice, plus webcam if chosen).
+        // The 3D interviewer, if frontend/public/avatars/interviewer.glb exists.
+        if (await avatarAvailable()) {
+          const ready = new Promise<boolean>((resolve) => {
+            avatarWait.current = { resolve }
+            window.setTimeout(() => resolve(false), 30000)
+          })
+          setAvatarCtx(player.ctx)
+          if (!(await ready)) setNotice('The avatar did not load in time; continuing with voice only.')
+        }
+
+        // Record the whole session (mic + interviewer voice, plus webcam/avatar video).
         const mode = getRecordMode()
         if (mode !== 'off') {
           try {
-            const rec = await SessionRecorder.create(player.ctx, player.output, mode)
+            const avatar = avatarRef.current
+            const voices = avatar ? [player.output, avatar.voiceOutput] : [player.output]
+            const rec = await SessionRecorder.create(player.ctx, voices, mode, avatar?.canvas ?? null)
             recorderRef.current = rec
             rec.start()
             setRecording(rec.mode)
             setCamStream(rec.camera)
-            if (mode === 'webcam' && !rec.camera) setNotice('Camera unavailable: recording audio only.')
+            if (rec.mode !== mode) setNotice(`Recording ${rec.mode === 'audio' ? 'audio only' : rec.mode} (${mode} unavailable).`)
           } catch (e) {
             setNotice(`Not recording: ${(e as Error).message}`)
           }
@@ -406,6 +436,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       setPaused(true)
       clock.current.pausedAt = performance.now()
       player?.pause()
+      avatarRef.current?.pause()
       recorderRef.current?.pause()
       if (listener?.listening) await listener.suspend()
     } else {
@@ -413,13 +444,14 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       setPaused(false)
       clock.current.pausedTotal += performance.now() - clock.current.pausedAt
       player?.resume()
+      avatarRef.current?.resume()
       recorderRef.current?.resume()
       if (phaseRef.current === 'listening' && voiceRef.current) await listener?.resume()
     }
   }
 
   const repeatQuestion = async () => {
-    const player = playerRef.current
+    const player = playerRef.current ? speaker() : null
     const listener = listenerRef.current
     if (!player || phaseRef.current !== 'listening' || pausedRef.current || !lastSentences.current.length) return
     const wasListening = !!listener?.listening
@@ -538,9 +570,26 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       <div className="interview-body">
         <section className="stage">
           {camStream && <video ref={selfView} className="self-view" autoPlay muted playsInline />}
-          <div className={`stage-face ${phase === 'speaking' && !paused ? 'talking' : ''}`} aria-hidden>
-            {interviewer.slice(0, 1).toUpperCase()}
-          </div>
+          {avatarCtx ? (
+            <Avatar
+              ctx={avatarCtx}
+              body={pack.options.voice?.[1] === 'm' ? 'M' : 'F'}
+              talking={phase === 'speaking' && !paused}
+              onReady={(a) => {
+                avatarRef.current = a
+                avatarWait.current?.resolve(true)
+              }}
+              onError={(msg) => {
+                setAvatarCtx(null)
+                setNotice(`Avatar failed to load (${msg}); continuing with voice only.`)
+                avatarWait.current?.resolve(false)
+              }}
+            />
+          ) : (
+            <div className={`stage-face ${phase === 'speaking' && !paused ? 'talking' : ''}`} aria-hidden>
+              {interviewer.slice(0, 1).toUpperCase()}
+            </div>
+          )}
           <div className="caption" aria-live="polite">
             {caption || (phase === 'starting' ? '…' : '')}
           </div>

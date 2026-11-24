@@ -1,9 +1,29 @@
+import type { Expression, WordTiming } from '../api'
 import { base64ToArrayBuffer } from './wav'
 
 /** One voiced sentence from the backend. */
 export interface SpokenSentence {
   text: string
   audioBase64: string | null
+  /** Per-word timings from Kokoro (for lip-sync). */
+  words?: WordTiming[]
+  /** Expression tags, char_index relative to `text`. */
+  expressions?: Expression[]
+}
+
+/**
+ * Something that can say the interviewer's sentences in order: the plain audio
+ * player below, or the 3D avatar (src/avatar/Avatar.tsx), which lip-syncs.
+ */
+export interface Speaker {
+  /** Queue a sentence; onStart fires when it starts playing. */
+  enqueue(sentence: SpokenSentence, onStart?: () => void): void
+  /** Resolves once everything queued so far has finished playing. */
+  whenIdle(): Promise<void>
+  pause(): void
+  resume(): void
+  /** Stop and drop everything queued. */
+  stop(): void
 }
 
 interface Cue {
@@ -21,7 +41,7 @@ interface Cue {
  *
  * `output` is a GainNode the recorder (Milestone 3) can tap.
  */
-export class InterviewerPlayer {
+export class InterviewerPlayer implements Speaker {
   readonly ctx: AudioContext
   readonly output: GainNode
   private nextStart = 0

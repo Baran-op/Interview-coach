@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@met4citizen/talkinghead": "1.8.2",
     "@ricky0123/vad-web": "0.0.31",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

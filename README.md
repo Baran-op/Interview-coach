@@ -3,10 +3,10 @@
 A local web app for practising interviews against a Claude-powered interviewer whose
 questions come from a real job description, your CV and company notes. See [SPEC.md](SPEC.md).
 
-**Status: Milestone 3 (recording and review).** The interviewer speaks (Kokoro) and you
-answer out loud (Silero VAD in the browser, then Whisper). The session is recorded, and
-afterwards you get a Review page: playback with question markers, the transcript and a
-scored feedback report. The 3D avatar comes in Milestone 4.
+**Status: Milestone 4 (avatar).** A 3D interviewer (three.js + TalkingHead) speaks with
+Kokoro's voice, lip-synced and with facial expressions. You answer out loud (Silero VAD in
+the browser, then Whisper). The session is recorded, and afterwards you get a Review page:
+playback with question markers, the transcript and a scored feedback report.
 
 Personal use only: it runs on localhost with your Claude subscription. Don't deploy it or
 share it with other people.
@@ -39,6 +39,14 @@ share it with other people.
    ```sh
    cd frontend && npm install && cd ..
    ```
+5. The avatar (optional; without it you get a plain "speaking" indicator):
+   - Create an avatar at [avaturn.me](https://avaturn.me) (free for personal use). Use a
+     **Type-2 (T2)** avatar and export it as **.glb**. T2 exports include the ARKit
+     blendshapes and Oculus visemes that TalkingHead needs. A Ready Player Me avatar
+     exported with `morphTargets=ARKit,Oculus Visemes` also works.
+   - Save it as `frontend/public/avatars/interviewer.glb`. Avatar files are git-ignored
+     because they're built from your photo.
+   - The avatar's body type (for gestures) follows the gender of the voice chosen in Setup.
 
 ## Run
 
@@ -86,12 +94,31 @@ still bleed into your answer.
    The Milestone 2 target is under 4 s.
 
 The chips under each interviewer message show the expression tags parsed from the reply.
-The avatar will use them in Milestone 4.
+
+### The avatar
+
+- It is framed head-and-shoulders against a plain wall. It lip-syncs every sentence using
+  Kokoro's own word timings, and each expression tag fires when its sentence starts:
+
+  | Tag | Avatar |
+  |---|---|
+  | `[neutral]` | neutral mood |
+  | `[smile]` | happy mood |
+  | `[thinking]` | brief look up/away (🤔), neutral mood |
+  | `[nod]` | head nod |
+  | `[curious]` | raised brows, slight head tilt |
+  | `[serious]` | neutral mood, steady eye contact |
+
+- While you talk, it blinks, moves a little, keeps eye contact and nods now and then.
+- **Pause** freezes the avatar and its audio together, so lip-sync stays aligned.
+- Everything goes through one `AvatarController.say()` (`frontend/src/avatar/Avatar.tsx`),
+  so a different avatar technology can replace it later without touching the rest.
 
 ### Recording and review
 
-- Choose **Record the session** on Setup: *Webcam + audio* (default), *Audio only* or
-  *Don't record*. The recording mixes your mic with the interviewer's voice. While
+- Choose **Record the session** on Setup: *Webcam + audio* (default), *Avatar + audio*,
+  *Avatar and webcam side by side*, *Audio only* or *Don't record*. If the avatar or
+  camera is missing, it falls back to whatever is available and tells you. The recording mixes your mic with the interviewer's voice. While
   recording, a **● REC** badge and a small self-view are shown. Pausing the interview also
   pauses the recording.
 - When the interview ends (the interviewer says goodbye, or you press **End interview**),
@@ -174,6 +201,8 @@ are estimated from word length only when those are missing.
   asyncio task, because the SDK client can't be shared across request tasks.
 - Whisper and Kokoro run on a single worker thread, one job at a time, so they never compete
   for the GPU. While Claude writes sentence 2, Kokoro is already voicing sentence 1.
+- The avatar's lip-sync module is imported directly (TalkingHead's own runtime `import()`
+  doesn't survive bundling). A dev-only `window.__avatar` hook helps with debugging.
 - The voice activity detector's files (Silero model, onnxruntime WASM) are served by a small
   Vite plugin from `node_modules` at `/vad/`, so nothing is fetched from a CDN.
 - Active sessions are kept in memory. If you restart the backend in the middle of an
