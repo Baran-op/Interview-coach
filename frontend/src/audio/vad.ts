@@ -75,7 +75,7 @@ export class TurnListener {
           // Long enough silence: the answer is over.
           this._listening = false
           this.collecting = true
-          void this.vad?.pause().finally(() => {
+          void this.pauseVad().finally(() => {
             this.collecting = false
             this.deliver(true)
           })
@@ -95,7 +95,25 @@ export class TurnListener {
     this.segments = []
     this.held = false
     this._listening = true
-    await this.vad.start()
+    await this.startVad()
+  }
+
+  // start() opens the mic asynchronously; pausing before it finishes throws
+  // inside vad-web, so every pause waits for a pending start first.
+  private starting: Promise<void> = Promise.resolve()
+
+  private startVad(): Promise<void> {
+    this.starting = this.vad!.start()
+    return this.starting
+  }
+
+  private async pauseVad(): Promise<void> {
+    await this.starting.catch(() => {})
+    try {
+      await this.vad?.pause()
+    } catch (e) {
+      console.warn('VAD pause failed', e)
+    }
   }
 
   /** Spacebar push-to-talk: while held, pauses don't end the turn. */
@@ -109,7 +127,7 @@ export class TurnListener {
     this.held = false
     this.collecting = true
     this._listening = false
-    await this.vad.pause() // submits any speech in progress via onSpeechEnd
+    await this.pauseVad() // submits any speech in progress via onSpeechEnd
     this.collecting = false
     this.deliver(false)
   }
@@ -119,7 +137,7 @@ export class TurnListener {
     if (!this.vad || !this._listening) return
     this.collecting = true
     this._listening = false
-    await this.vad.pause()
+    await this.pauseVad()
     this.collecting = false
   }
 
@@ -127,14 +145,14 @@ export class TurnListener {
   async resume(): Promise<void> {
     if (!this.vad) return
     this._listening = true
-    await this.vad.start()
+    await this.startVad()
   }
 
   /** Stop listening and throw away anything recorded. */
   async cancel(): Promise<void> {
     this.collecting = true
     this._listening = false
-    await this.vad?.pause()
+    await this.pauseVad()
     this.collecting = false
     this.segments = []
   }
@@ -148,7 +166,12 @@ export class TurnListener {
   }
 
   async destroy(): Promise<void> {
-    await this.vad?.destroy()
+    await this.starting.catch(() => {})
+    try {
+      await this.vad?.destroy()
+    } catch (e) {
+      console.warn('VAD destroy failed', e)
+    }
     this.vad = null
   }
 }

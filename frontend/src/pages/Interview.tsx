@@ -546,7 +546,10 @@ export default function Interview({ pack, onExit, onReview }: Props) {
             ● REC
           </span>
         )}
-        <span className="timer">{formatTime(elapsed)}</span>
+        <span className={`timer ${pack.options.minutes && elapsed > pack.options.minutes * 60000 ? 'over' : ''}`}>
+          {formatTime(elapsed)}
+          {pack.options.minutes ? ` / ${pack.options.minutes}:00` : ''}
+        </span>
         {live ? (
           <button className="danger" onClick={() => void finishInterview()} disabled={!sessionRef.current}>
             End interview

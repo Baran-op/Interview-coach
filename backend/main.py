@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from . import db, feedback, gpu, stt, tts
 from .brain import (
     OPENING_CUE,
+    time_note,
     BrainError,
     InterviewBrain,
     SentenceSplitter,
@@ -81,6 +82,8 @@ class LiveSession:
     brain: InterviewBrain
     voice: str
     stt_prompt: str
+    options: dict
+    started_at_ms: int
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -309,6 +312,45 @@ async def get_pack(pack_id: str):
     return pack
 
 
+@app.put("/packs/{pack_id}")
+async def update_pack(pack_id: str, pack: PackIn):
+    if not db.get_pack(pack_id):
+        raise HTTPException(404, "Pack not found")
+    return db.update_pack(pack_id, pack.model_dump())
+
+
+def _remove_files(paths: list[str]) -> None:
+    for p in paths:
+        try:
+            Path(p).unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("Could not delete %s: %s", p, exc)
+
+
+@app.delete("/packs/{pack_id}")
+async def delete_pack(pack_id: str):
+    """Delete a pack with all its sessions, reports and recordings."""
+    if not db.get_pack(pack_id):
+        raise HTTPException(404, "Pack not found")
+    if any(s["pack_id"] == pack_id for s in db.list_sessions(limit=1000) if s["id"] in LIVE):
+        raise HTTPException(409, "An interview with this pack is still running")
+    _remove_files(db.delete_pack(pack_id))
+    return {"deleted": pack_id}
+
+
+@app.get("/packs/{pack_id}/history")
+async def pack_history(pack_id: str):
+    if not db.get_pack(pack_id):
+        raise HTTPException(404, "Pack not found")
+    return db.pack_history(pack_id)
+
+
+@app.get("/history")
+async def history():
+    """All packs with their finished sessions and score breakdowns."""
+    return db.history()
+
+
 @app.post("/sessions")
 async def start_session(body: SessionIn):
     t0 = time.perf_counter()
@@ -330,6 +372,8 @@ async def start_session(body: SessionIn):
     opts = pack.get("options") or {}
     live = LiveSession(
         brain=brain,
+        options=opts,
+        started_at_ms=int(time.time() * 1000),
         voice=opts.get("voice") if opts.get("voice") in tts.VOICES else tts.DEFAULT_VOICE,
         stt_prompt=stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", "")),
     )
@@ -378,8 +422,9 @@ async def take_turn(session_id: str, request: Request):
         raise
 
     turn_idx = db.add_turn(session_id, "candidate", answer)
+    to_claude = time_note(live.options, live.started_at_ms, int(time.time() * 1000)) + answer
     return StreamingResponse(
-        speak(session_id, live, live.brain.stream(answer),
+        speak(session_id, live, live.brain.stream(to_claude),
               [{"type": "transcript", "text": answer, "stt_ms": stt_ms, "turn_idx": turn_idx}], t0),
         media_type="application/x-ndjson",
     )
@@ -420,6 +465,20 @@ async def get_session(session_id: str):
         "turns": db.list_turns(session_id),
         "report_status": report["status"] if report else None,
     }
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session with its transcript, report and recording."""
+    if session_id in LIVE:
+        raise HTTPException(409, "End the interview first")
+    if session_id in REPORT_TASKS:
+        raise HTTPException(409, "The report is still being written")
+    if not db.get_session(session_id):
+        raise HTTPException(404, "Session not found")
+    path = db.delete_session(session_id)
+    _remove_files([path] if path else [])
+    return {"deleted": session_id}
 
 
 @app.get("/sessions/{session_id}/turns")

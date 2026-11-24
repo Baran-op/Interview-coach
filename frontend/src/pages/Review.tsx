@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, type Criterion, type ReportResponse, type SessionInfo, type Turn } from '../api'
+import { api, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -17,19 +17,35 @@ function clock(ms: number | null) {
 
 interface Props {
   sessionId: string
+  onStart: (pack: Pack) => void
 }
 
-export default function Review({ sessionId }: Props) {
+export default function Review({ sessionId, onStart }: Props) {
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(0)
   const [audioOnly, setAudioOnly] = useState(false)
+  const [previous, setPrevious] = useState<HistorySession | null>(null)
   const video = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     api.getSession(sessionId).then(setSession, (e: Error) => setError(e.message))
   }, [sessionId])
+
+  // The previous scored attempt at the same pack, for comparison.
+  const packId = session?.pack_id
+  const reportReady = report?.status === 'ready'
+  useEffect(() => {
+    if (!packId || !session) return
+    api
+      .packHistory(packId)
+      .then((h) => {
+        const earlier = h.filter((s) => s.started_at < session.started_at && s.overall_score != null && s.criteria)
+        setPrevious(earlier[earlier.length - 1] ?? null)
+      })
+      .catch(() => {})
+  }, [packId, session, reportReady])
 
   // Poll until the report is written.
   useEffect(() => {
@@ -133,9 +149,25 @@ export default function Review({ sessionId }: Props) {
           <a className={`button-link ${report?.report_md ? '' : 'disabled'}`} href={api.reportMdUrl(sessionId)} download>
             Download report (.md)
           </a>
-          <a className="button-link" href="#/">
-            New interview
-          </a>
+          {pack && (
+            <button className="primary" onClick={() => onStart(pack)}>
+              Run this pack again
+            </button>
+          )}
+          <button
+            className="ghost"
+            onClick={async () => {
+              if (!window.confirm('Delete this session with its recording and report?')) return
+              try {
+                await api.deleteSession(sessionId)
+                window.location.hash = '#/history'
+              } catch (e) {
+                setError((e as Error).message)
+              }
+            }}
+          >
+            Delete
+          </button>
         </div>
       </div>
 
@@ -211,6 +243,7 @@ export default function Review({ sessionId }: Props) {
               </div>
               <p>{r.summary}</p>
             </div>
+            {previous && <Comparison report={r} previous={previous} />}
 
             <h3>Top 3 things to fix</h3>
             <ol className="fixes">
@@ -286,6 +319,44 @@ export default function Review({ sessionId }: Props) {
           </>
         )}
       </section>
+    </div>
+  )
+}
+
+function Delta({ label, now, before }: { label: string; now: number; before: number }) {
+  const d = Math.round((now - before) * 10) / 10
+  const cls = d > 0 ? 'up' : d < 0 ? 'down' : ''
+  return (
+    <span>
+      {label}{' '}
+      <span className={`delta ${cls}`}>
+        {d > 0 ? '▲' : d < 0 ? '▼' : '='} {d > 0 ? '+' : ''}
+        {d.toFixed(1)}
+      </span>
+    </span>
+  )
+}
+
+/** Change since the previous attempt at the same pack. */
+function Comparison({ report, previous }: { report: NonNullable<ReportResponse['report']>; previous: HistorySession }) {
+  const avg = (c: Criterion) => report.answers.reduce((n, a) => n + a.scores[c], 0) / report.answers.length
+  return (
+    <div className="compare">
+      <div className="muted small">
+        Compared with your previous attempt ({new Date(previous.started_at).toLocaleDateString()},{' '}
+        {previous.overall_score!.toFixed(1)}): <a href="#/history">see all</a>
+      </div>
+      <div className="deltas">
+        <Delta label="Overall" now={report.overall_score} before={previous.overall_score!} />
+        {CRITERIA.map((c) => (
+          <Delta key={c} label={LABEL[c]} now={avg(c)} before={previous.criteria![c]} />
+        ))}
+        {previous.filler_count != null && (
+          <span>
+            Fillers {report.filler_words.count} (was {previous.filler_count})
+          </span>
+        )}
+      </div>
     </div>
   )
 }

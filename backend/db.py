@@ -243,3 +243,87 @@ def list_turns(session_id: str) -> list[dict]:
         d["expressions"] = json.loads(d.pop("expressions_json") or "[]")
         out.append(d)
     return out
+
+
+# ----------------------------------------------------- packs: edit/delete --- #
+
+def update_pack(pack_id: str, data: dict) -> dict | None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE packs SET title = ?, role = ?, company = ?, jd = ?, profile = ?, company_notes = ?, "
+            "options_json = ? WHERE id = ?",
+            (
+                data["title"], data.get("role"), data.get("company"), data.get("jd"), data.get("profile"),
+                data.get("company_notes"), json.dumps(data.get("options") or {}), pack_id,
+            ),
+        )
+    return get_pack(pack_id)
+
+
+def delete_session(session_id: str) -> str | None:
+    """Delete a session with its turns and report. Returns its recording path."""
+    with connect() as conn:
+        row = conn.execute("SELECT recording_path FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute("DELETE FROM reports WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    return row["recording_path"]
+
+
+def delete_pack(pack_id: str) -> list[str]:
+    """Delete a pack and all its sessions. Returns the recording paths to remove."""
+    with connect() as conn:
+        ids = [r["id"] for r in conn.execute("SELECT id FROM sessions WHERE pack_id = ?", (pack_id,))]
+    paths = [p for p in (delete_session(i) for i in ids) if p]
+    with connect() as conn:
+        conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
+    return paths
+
+
+# --------------------------------------------------------------- history --- #
+
+CRITERIA = ("relevance", "structure", "specificity", "evidence")
+
+
+def _session_summary(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    report = json.loads(d.pop("report_json")) if d.get("report_json") else None
+    d["criteria"] = None
+    d["filler_count"] = None
+    d["avg_answer_seconds"] = None
+    d["answers"] = None
+    if report and report.get("answers"):
+        answers = report["answers"]
+        d["criteria"] = {
+            c: round(sum(a["scores"][c] for a in answers) / len(answers), 2) for c in CRITERIA
+        }
+        d["filler_count"] = (report.get("filler_words") or {}).get("count")
+        d["avg_answer_seconds"] = report.get("avg_answer_seconds")
+        d["answers"] = len(answers)
+    return d
+
+
+def pack_history(pack_id: str) -> list[dict]:
+    """A pack's finished sessions, oldest first, with score breakdowns."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT s.id, s.pack_id, s.started_at, s.ended_at, s.overall_score, "
+            "s.recording_path IS NOT NULL AS has_recording, r.status AS report_status, r.report_json "
+            "FROM sessions s LEFT JOIN reports r ON r.session_id = s.id "
+            "WHERE s.pack_id = ? AND s.ended_at IS NOT NULL ORDER BY s.started_at",
+            (pack_id,),
+        ).fetchall()
+    return [_session_summary(r) for r in rows]
+
+
+def history() -> list[dict]:
+    """Every pack (most recently used first) with its session history."""
+    out = []
+    for pack in list_packs():
+        sessions = pack_history(pack["id"])
+        last = max([s["started_at"] for s in sessions], default=pack["created_at"])
+        out.append({"pack": pack, "sessions": sessions, "last_used": last})
+    out.sort(key=lambda x: -x["last_used"])
+    return out

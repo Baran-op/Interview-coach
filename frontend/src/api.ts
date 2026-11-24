@@ -131,6 +131,26 @@ export interface ReportResponse {
   error: string | null
 }
 
+export interface HistorySession {
+  id: string
+  pack_id: string
+  started_at: number
+  ended_at: number | null
+  overall_score: number | null
+  has_recording: number | boolean
+  report_status: ReportStatus | null
+  criteria: Record<Criterion, number> | null
+  filler_count: number | null
+  avg_answer_seconds: number | null
+  answers: number | null
+}
+
+export interface PackHistory {
+  pack: Pack
+  sessions: HistorySession[]
+  last_used: number
+}
+
 export interface ModelState {
   model: string
   status: 'not loaded' | 'loading' | 'loaded' | 'unavailable'
@@ -189,6 +209,13 @@ export const api = {
     return res.json()
   },
   listPacks: () => request<Pack[]>('/packs'),
+  getPack: (id: string) => request<Pack>(`/packs/${id}`),
+  updatePack: (id: string, pack: PackInput) =>
+    request<Pack>(`/packs/${id}`, { method: 'PUT', body: JSON.stringify(pack) }),
+  deletePack: (id: string) => request<{ deleted: string }>(`/packs/${id}`, { method: 'DELETE' }),
+  history: () => request<PackHistory[]>('/history'),
+  packHistory: (id: string) => request<HistorySession[]>(`/packs/${id}/history`),
+  deleteSession: (id: string) => request<{ deleted: string }>(`/sessions/${id}`, { method: 'DELETE' }),
   createPack: (pack: PackInput) =>
     request<Pack>('/packs', { method: 'POST', body: JSON.stringify(pack) }),
   voices: () => request<{ default: string; voices: string[] }>('/voices'),

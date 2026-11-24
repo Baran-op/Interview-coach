@@ -28,13 +28,22 @@ function voiceLabel(id: string) {
   return `${name ? name[0].toUpperCase() + name.slice(1) : id} (${accent} ${gender})`
 }
 
-interface Props {
-  onStart: (pack: Pack) => void
+export function packSummary(p: Pack) {
+  const o = p.options
+  const length = o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`
+  return `${o.interview_type} · ${length} · ${o.difficulty} · ${o.style}`
 }
 
-export default function Setup({ onStart }: Props) {
+interface Props {
+  onStart: (pack: Pack) => void
+  /** Open this pack for editing (#/edit/<id>). */
+  editPackId?: string
+}
+
+export default function Setup({ onStart, editPackId }: Props) {
   const [packs, setPacks] = useState<Pack[]>([])
   const [form, setForm] = useState<PackInput>(EMPTY)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [voices, setVoices] = useState<string[]>(['af_heart'])
@@ -60,6 +69,10 @@ export default function Setup({ onStart }: Props) {
       .catch((e: Error) => setError(e.message))
   }, [])
 
+  useEffect(() => {
+    if (editPackId) api.getPack(editPackId).then(editPack, (e: Error) => setError(e.message))
+  }, [editPackId])
+
   const set = <K extends keyof PackInput>(key: K, value: PackInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
   const setOpt = <K extends keyof PackInput['options']>(key: K, value: PackInput['options'][K]) =>
@@ -77,6 +90,7 @@ export default function Setup({ onStart }: Props) {
   }
 
   const editPack = (p: Pack) => {
+    setEditingId(p.id)
     setForm({
       title: p.title,
       role: p.role,
@@ -89,13 +103,19 @@ export default function Setup({ onStart }: Props) {
     window.scrollTo({ top: 0 })
   }
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  const stopEditing = () => {
+    setEditingId(null)
+    setForm({ ...EMPTY, profile: form.profile })
+    if (window.location.hash.startsWith('#/edit/')) window.history.replaceState(null, '', '#/')
+  }
+
+  const save = async (asNew: boolean) => {
     setError(null)
     setSaving(true)
     try {
       const title = form.title.trim() || [form.role, form.company].filter(Boolean).join(' @ ') || 'Untitled'
-      const pack = await api.createPack({ ...form, title })
+      const data = { ...form, title }
+      const pack = editingId && !asNew ? await api.updatePack(editingId, data) : await api.createPack(data)
       onStart(pack)
     } catch (err) {
       setError((err as Error).message)
@@ -103,10 +123,22 @@ export default function Setup({ onStart }: Props) {
     }
   }
 
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    void save(false)
+  }
+
   return (
     <div className="setup">
       <form className="card" onSubmit={submit}>
-        <h2>New interview</h2>
+        <h2>
+          {editingId ? 'Edit pack' : 'New interview'}
+          {editingId && (
+            <button type="button" className="ghost small" onClick={stopEditing}>
+              Cancel editing
+            </button>
+          )}
+        </h2>
 
         <div className="row">
           <label>
@@ -155,8 +187,21 @@ export default function Setup({ onStart }: Props) {
             </select>
           </label>
           <label>
-            Questions
-            <input type="number" min={1} max={20} value={form.options.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+            Length
+            <span className="length">
+              <select
+                value={form.options.minutes ? 'minutes' : 'questions'}
+                onChange={(e) => setOpt('minutes', e.target.value === 'minutes' ? 20 : null)}
+              >
+                <option value="questions">Questions</option>
+                <option value="minutes">Minutes</option>
+              </select>
+              {form.options.minutes ? (
+                <input type="number" min={5} max={120} step={5} value={form.options.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
+              ) : (
+                <input type="number" min={1} max={20} value={form.options.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+              )}
+            </span>
           </label>
           <label>
             Difficulty
@@ -209,9 +254,16 @@ export default function Setup({ onStart }: Props) {
         </label>
 
         {error && <div className="banner error">{error}</div>}
-        <button type="submit" className="primary" disabled={saving}>
-          {saving ? 'Saving…' : 'Save pack & start interview'}
-        </button>
+        <div className="form-actions">
+          <button type="submit" className="primary" disabled={saving}>
+            {saving ? 'Saving…' : editingId ? 'Save changes & start interview' : 'Save pack & start interview'}
+          </button>
+          {editingId && (
+            <button type="button" disabled={saving} onClick={() => void save(true)}>
+              Save as a new pack & start
+            </button>
+          )}
+        </div>
       </form>
 
       <aside className="card packs">
@@ -221,19 +273,21 @@ export default function Setup({ onStart }: Props) {
           <div key={p.id} className="pack">
             <div>
               <strong>{p.title}</strong>
-              <div className="muted small">
-                {p.options.interview_type} · {p.options.num_questions} questions · {p.options.difficulty} · {p.options.style}
-              </div>
+              <div className="muted small">{packSummary(p)}</div>
             </div>
             <div className="pack-actions">
               <button type="button" onClick={() => onStart(p)}>Start</button>
-              <button type="button" className="ghost" onClick={() => editPack(p)}>Copy to form</button>
+              <button type="button" className="ghost" onClick={() => editPack(p)}>
+                Edit
+              </button>
             </div>
           </div>
         ))}
         {sessions.length > 0 && (
           <>
-            <h2 className="spaced">Recent sessions</h2>
+            <h2 className="spaced">
+              Recent sessions <a className="small" href="#/history">All history →</a>
+            </h2>
             {sessions.map((s) => (
               <a key={s.id} className="session-link" href={`#/review/${s.id}`}>
                 <span>

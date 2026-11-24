@@ -9,7 +9,7 @@ Candidate profile:
 Company notes:
 {company_notes}
 
-Interview type: {type}. Difficulty: {difficulty}. Ask {n} main questions.
+Interview type: {type}. Difficulty: {difficulty}. {length}
 
 Rules:
 - Ask ONE question at a time. Speak naturally, max 3 sentences per turn.

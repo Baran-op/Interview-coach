@@ -171,7 +171,7 @@ def normalise(raw: dict, turns: list[dict]) -> dict:
     }
 
 
-def to_markdown(report: dict, pack: dict, session: dict) -> str:
+def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | None = None) -> str:
     from datetime import datetime
 
     when = datetime.fromtimestamp(session["started_at"] / 1000).strftime("%Y-%m-%d %H:%M")
@@ -216,6 +216,16 @@ def to_markdown(report: dict, pack: dict, session: dict) -> str:
             *[f"> {line}" if line else ">" for line in a["better_answer"].splitlines()],
             "",
         ]
+    if turns:
+        name = (pack.get("options") or {}).get("interviewer_name") or "Interviewer"
+        out += ["## Transcript", ""]
+        for t in turns:
+            stamp = ""
+            if t.get("t_start_ms") is not None:
+                secs = t["t_start_ms"] // 1000
+                stamp = f"`{secs // 60}:{secs % 60:02d}` "
+            who = name if t["speaker"] == "interviewer" else "You"
+            out += [f"{stamp}**{who}:** {t['text']}", ""]
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -233,7 +243,7 @@ async def generate(session_id: str) -> None:
             raise FeedbackError("There are no answers to score: the interview ended before you answered.")
         raw = await _ask_claude(_system_prompt(pack), _transcript(turns))
         report = normalise(raw, turns)
-        db.save_report(session_id, report, to_markdown(report, pack, session))
+        db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])
     except Exception as exc:

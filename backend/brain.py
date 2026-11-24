@@ -84,6 +84,27 @@ def parse_tags(raw: str) -> ParsedReply:
 # System prompt
 # --------------------------------------------------------------------------- #
 
+def length_instruction(opts: dict) -> str:
+    minutes = opts.get("minutes")
+    if minutes:
+        est = max(2, round(minutes / 4))
+        return (
+            f"The interview should last about {minutes} minutes: plan for around {est} main questions "
+            "and start wrapping up when time is nearly over. The candidate's messages may begin with a "
+            "time note such as \"(Time: 12 of 20 min used.)\". Use it to pace yourself, but never mention it."
+        )
+    return f"Ask {opts.get('num_questions') or 5} main questions."
+
+
+def time_note(opts: dict, started_at_ms: int, now_ms: int) -> str:
+    """Prefix for the candidate's message in timed interviews (not stored in the transcript)."""
+    minutes = opts.get("minutes")
+    if not minutes:
+        return ""
+    used = max(0, round((now_ms - started_at_ms) / 60000))
+    return f"(Time: {used} of {minutes} min used.) "
+
+
 def build_system_prompt(pack: dict) -> str:
     opts = pack.get("options") or {}
     template = (PROMPTS_DIR / "interviewer.txt").read_text(encoding="utf-8")
@@ -98,6 +119,7 @@ def build_system_prompt(pack: dict) -> str:
         "type": opts.get("interview_type") or "mixed",
         "n": opts.get("num_questions") or 5,
         "difficulty": opts.get("difficulty") or "medium",
+        "length": length_instruction(opts),
     }
     # str.format would choke on braces inside a pasted JD, so substitute by name.
     for key, val in values.items():

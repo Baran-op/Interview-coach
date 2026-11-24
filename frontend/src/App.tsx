@@ -3,14 +3,22 @@ import { api, type Pack } from './api'
 import Setup from './pages/Setup'
 import Interview from './pages/Interview'
 import Review from './pages/Review'
+import History from './pages/History'
 
-type Screen = { name: 'setup' } | { name: 'interview'; pack: Pack } | { name: 'review'; sessionId: string }
+type Screen =
+  | { name: 'setup'; editPackId?: string }
+  | { name: 'interview'; pack: Pack }
+  | { name: 'review'; sessionId: string }
+  | { name: 'history' }
 
-// Tiny hash router: #/ (setup), #/interview, #/review/<session id>.
+// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history.
 function fromHash(current: Screen): Screen {
   const hash = window.location.hash
   const review = hash.match(/^#\/review\/([\w-]+)/)
   if (review) return { name: 'review', sessionId: review[1] }
+  const edit = hash.match(/^#\/edit\/([\w-]+)/)
+  if (edit) return { name: 'setup', editPackId: edit[1] }
+  if (hash.startsWith('#/history')) return { name: 'history' }
   if (hash.startsWith('#/interview') && current.name === 'interview') return current
   return { name: 'setup' }
 }
@@ -44,6 +52,16 @@ export default function App() {
           Interview Coach
         </a>
         {screen.name === 'interview' && <span className="muted">{screen.pack.title}</span>}
+        {screen.name !== 'interview' && (
+          <nav className="nav">
+            <a href="#/" className={screen.name === 'setup' ? 'active' : ''}>
+              New interview
+            </a>
+            <a href="#/history" className={screen.name === 'history' ? 'active' : ''}>
+              History
+            </a>
+          </nav>
+        )}
       </header>
       {healthProblems.length > 0 && (
         <div className="banner error">
@@ -53,7 +71,14 @@ export default function App() {
         </div>
       )}
       <main>
-        {screen.name === 'setup' && <Setup onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
+        {screen.name === 'setup' && (
+          <Setup
+            key={screen.editPackId ?? 'new'}
+            editPackId={screen.editPackId}
+            onStart={(pack) => go({ name: 'interview', pack }, '#/interview')}
+          />
+        )}
+        {screen.name === 'history' && <History onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
         {screen.name === 'interview' && (
           <Interview
             pack={screen.pack}
@@ -61,7 +86,13 @@ export default function App() {
             onReview={(sessionId) => go({ name: 'review', sessionId }, `#/review/${sessionId}`)}
           />
         )}
-        {screen.name === 'review' && <Review key={screen.sessionId} sessionId={screen.sessionId} />}
+        {screen.name === 'review' && (
+          <Review
+            key={screen.sessionId}
+            sessionId={screen.sessionId}
+            onStart={(pack) => go({ name: 'interview', pack }, '#/interview')}
+          />
+        )}
       </main>
     </div>
   )

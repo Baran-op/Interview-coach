@@ -3,10 +3,11 @@
 A local web app for practising interviews against a Claude-powered interviewer whose
 questions come from a real job description, your CV and company notes. See [SPEC.md](SPEC.md).
 
-**Status: Milestone 4 (avatar).** A 3D interviewer (three.js + TalkingHead) speaks with
+**Status: all five milestones built.** A 3D interviewer (three.js + TalkingHead) speaks with
 Kokoro's voice, lip-synced and with facial expressions. You answer out loud (Silero VAD in
 the browser, then Whisper). The session is recorded, and afterwards you get a Review page:
-playback with question markers, the transcript and a scored feedback report.
+playback with question markers, the transcript and a scored feedback report. History tracks
+your scores across re-runs of each interview pack.
 
 Personal use only: it runs on localhost with your Claude subscription. Don't deploy it or
 share it with other people.
@@ -143,6 +144,28 @@ Packs, sessions, turns (with timings) and reports are stored in `data/interview.
 recordings in `data/recordings/` (git-ignored). A webcam recording is roughly 7-8 MB per
 minute.
 
+### Packs and history
+
+- An **interview pack** is a saved role: the job description, your CV, company notes and
+  options (type, length, difficulty, style, interviewer name, voice). You can run the same
+  pack as often as you like.
+- **Length** is either a number of main questions or a number of minutes. In a timed
+  interview the timer shows `elapsed / total`. Each of your answers reaches the interviewer
+  with a hidden time note, so it can pace itself and wrap up on time; the note isn't saved
+  in your transcript.
+- **History** (top right) lists each pack with:
+  - your number of sessions, latest and best score, and change since the first session;
+  - a chart of the overall score per session (hover for the per-criterion breakdown,
+    click a point to open that review);
+  - a table of every session: overall score, the four criteria, filler words and average
+    answer length.
+
+  From there you can **Run again**, **Edit** or **Delete** a pack, and open or delete
+  sessions. Deleting also removes the recordings.
+- The Review page compares each report with your **previous attempt** at the same pack
+  (overall score, each criterion, filler words), and has **Run this pack again**.
+- The Markdown report download ends with the full, timestamped transcript.
+
 ### Tuning
 
 Optional `.env` settings:
@@ -176,6 +199,9 @@ those words automatically.
 | POST | `/sessions/{id}/report` | Write the report again (one more Claude request) |
 | GET | `/sessions/{id}/report.md` | Report as a Markdown download |
 | GET | `/sessions`, `/sessions/{id}` | Recent sessions; one session with its pack, turns and report status |
+| DELETE | `/sessions/{id}` | Delete a session with its transcript, report and recording |
+| PUT, DELETE | `/packs/{id}` | Edit a pack; delete it with all its sessions and recordings |
+| GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
 
 `/sessions` and `/turn` respond with NDJSON (one JSON object per line), so the first
