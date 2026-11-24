@@ -15,7 +15,16 @@ const EMPTY: PackInput = {
     difficulty: 'medium',
     style: 'neutral',
     interviewer_name: 'Alex',
+    voice: 'af_heart',
   },
+}
+
+// Kokoro voice ids: a/b = US/UK English, f/m = female/male.
+function voiceLabel(id: string) {
+  const [prefix, name] = id.split('_')
+  const accent = prefix?.[0] === 'b' ? 'UK' : 'US'
+  const gender = prefix?.[1] === 'm' ? 'male' : 'female'
+  return `${name ? name[0].toUpperCase() + name.slice(1) : id} (${accent} ${gender})`
 }
 
 interface Props {
@@ -27,8 +36,13 @@ export default function Setup({ onStart }: Props) {
   const [form, setForm] = useState<PackInput>(EMPTY)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [voices, setVoices] = useState<string[]>(['af_heart'])
 
   useEffect(() => {
+    api
+      .voices()
+      .then((v) => setVoices(v.voices))
+      .catch(() => {})
     api
       .listPacks()
       .then((list) => {
@@ -156,6 +170,16 @@ export default function Setup({ onStart }: Props) {
           <label>
             Interviewer
             <input value={form.options.interviewer_name} onChange={(e) => setOpt('interviewer_name', e.target.value)} />
+          </label>
+          <label>
+            Voice
+            <select value={form.options.voice} onChange={(e) => setOpt('voice', e.target.value)}>
+              {voices.map((v) => (
+                <option key={v} value={v}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 

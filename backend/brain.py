@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    StreamEvent,
     TextBlock,
 )
 
@@ -125,6 +127,7 @@ class InterviewBrain:
             allowed_tools=[],
             max_turns=1,           # one model turn per message
             setting_sources=[],    # ignore ~/.claude settings and CLAUDE.md files
+            include_partial_messages=True,  # stream text so TTS can start early
             model=os.environ.get("INTERVIEWER_MODEL") or None,
         )
 
@@ -142,53 +145,69 @@ class InterviewBrain:
                     item = await self._queue.get()
                     if item is None:
                         break
-                    text, fut = item
+                    text, out = item
                     try:
-                        reply = await self._ask(client, text)
-                        if not fut.done():
-                            fut.set_result(reply)
+                        await self._ask(client, text, out)
+                        out.put_nowait(_DONE)
                     except Exception as exc:  # surface to the waiting request
-                        if not fut.done():
-                            fut.set_exception(exc)
+                        out.put_nowait(exc if isinstance(exc, BrainError) else BrainError(str(exc)))
         except Exception as exc:
             if self._ready and not self._ready.done():
                 self._ready.set_exception(BrainError(f"Could not start Claude: {exc}"))
             # Fail anything still queued.
             while not self._queue.empty():
                 item = self._queue.get_nowait()
-                if item and not item[1].done():
-                    item[1].set_exception(BrainError(f"Claude session ended: {exc}"))
+                if item:
+                    item[1].put_nowait(BrainError(f"Claude session ended: {exc}"))
 
     @staticmethod
-    async def _ask(client: ClaudeSDKClient, text: str) -> str:
+    async def _ask(client: ClaudeSDKClient, text: str, out: asyncio.Queue) -> None:
+        """Send one message and put text deltas on `out` as they arrive."""
         await client.query(text)
-        parts: list[str] = []
+        streamed = False
+        sent_any = False
         async for msg in client.receive_response():
-            if isinstance(msg, AssistantMessage):
+            if isinstance(msg, StreamEvent):
+                ev = msg.event or {}
+                delta = ev.get("delta") or {}
+                if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                    if delta.get("text"):
+                        streamed = sent_any = True
+                        out.put_nowait(delta["text"])
+            elif isinstance(msg, AssistantMessage):
                 if msg.error:
                     raise BrainError(f"Claude error: {msg.error}")
-                parts.extend(b.text for b in msg.content if isinstance(b, TextBlock))
+                if not streamed:  # no partial events: fall back to the full text
+                    full = " ".join(b.text.strip() for b in msg.content if isinstance(b, TextBlock) and b.text.strip())
+                    if full:
+                        sent_any = True
+                        out.put_nowait(full)
             elif isinstance(msg, ResultMessage) and msg.is_error:
                 raise BrainError(
                     f"Claude returned an error ({msg.result or msg.subtype}). "
                     "If this keeps happening, check CLAUDE_CODE_OAUTH_TOKEN in .env "
                     "(regenerate with `claude setup-token`)."
                 )
-        reply = " ".join(p.strip() for p in parts if p.strip())
-        if not reply:
+        if not sent_any:
             raise BrainError("Claude returned an empty reply")
-        return reply
 
-    async def send(self, text: str) -> ParsedReply:
+    async def stream(self, text: str) -> AsyncIterator[str]:
+        """Send a message; yield the reply's raw text (with tags) as it streams."""
         if self._task is None or self._task.done():
             raise BrainError("Claude session is not running")
-        fut = asyncio.get_running_loop().create_future()
-        await self._queue.put((text, fut))
-        raw = await fut
-        return parse_tags(raw)
+        out: asyncio.Queue = asyncio.Queue()
+        await self._queue.put((text, out))
+        while True:
+            item = await out.get()
+            if item is _DONE:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
 
-    async def open(self) -> ParsedReply:
-        return await self.send(OPENING_CUE)
+    async def send(self, text: str) -> ParsedReply:
+        parts = [d async for d in self.stream(text)]
+        return parse_tags("".join(parts))
 
     async def close(self) -> None:
         if self._task and not self._task.done():
@@ -197,3 +216,40 @@ class InterviewBrain:
                 await asyncio.wait_for(self._task, timeout=10)
             except asyncio.TimeoutError:
                 self._task.cancel()
+
+
+_DONE = object()
+
+
+# --------------------------------------------------------------------------- #
+# Sentence splitting for streaming TTS
+# --------------------------------------------------------------------------- #
+
+_SENTENCE_END = re.compile(r"[.!?…]+[\"'”’)\]]*\s+")
+
+
+class SentenceSplitter:
+    """Cut streamed text into sentences so each can be voiced as soon as it ends.
+
+    A sentence ends at . ! ? followed by whitespace (so "3.5" and "e.g." mid-word
+    don't split). Expression tags stay at the start of the sentence they precede.
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+
+    def feed(self, delta: str) -> list[str]:
+        self._buf += delta
+        out = []
+        while True:
+            m = _SENTENCE_END.search(self._buf)
+            if not m:
+                break
+            chunk, self._buf = self._buf[:m.end()], self._buf[m.end():]
+            if chunk.strip():
+                out.append(chunk)
+        return out
+
+    def flush(self) -> list[str]:
+        chunk, self._buf = self._buf, ""
+        return [chunk] if chunk.strip() else []

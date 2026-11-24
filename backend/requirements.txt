@@ -1,9 +1,19 @@
-# Milestone 1
+# Web + brain (Milestone 1)
 fastapi
 uvicorn
 claude-agent-sdk
 python-multipart
 
-# Milestone 2 (Apple Silicon only; install when we get there)
-# mlx-whisper
-# mlx-audio
+# Voice (Milestone 2) - Apple Silicon only
+mlx-whisper          # speech-to-text (whisper-small.en)
+mlx-audio            # Kokoro-82M text-to-speech
+numpy
+
+# Kokoro's English text-to-phoneme step (needed by mlx-audio's Kokoro).
+# Installed explicitly instead of misaki[en] so the spaCy transformer extras
+# are not pulled in. After installing, also run:
+#   python -m spacy download en_core_web_sm
+misaki
+spacy
+num2words
+phonemizer           # only imported; espeak-ng itself is not required
