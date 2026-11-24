@@ -1,0 +1,18 @@
+# secrets
+.env
+
+# local data: sqlite db, recordings, reports
+data/*
+!data/.gitkeep
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# node
+node_modules/
+frontend/dist/
+
+.DS_Store

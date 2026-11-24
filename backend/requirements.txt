@@ -1,0 +1,9 @@
+# Milestone 1
+fastapi
+uvicorn
+claude-agent-sdk
+python-multipart
+
+# Milestone 2 (Apple Silicon only; install when we get there)
+# mlx-whisper
+# mlx-audio
