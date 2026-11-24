@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { api, type Expression, type Health, type InterviewEvent, type Pack } from '../api'
+import { api, type Expression, type Health, type InterviewEvent, type Pack, type TurnTiming } from '../api'
 import { InterviewerPlayer, type SpokenSentence } from '../audio/player'
+import { SessionRecorder, getRecordMode } from '../audio/recorder'
 import { TurnListener } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 
@@ -29,6 +30,12 @@ interface Latency {
 interface Props {
   pack: Pack
   onExit: () => void
+  onReview: (sessionId: string) => void
+}
+
+interface Span {
+  start: number
+  end: number
 }
 
 const SILENCE_OPTIONS = [1500, 2000, 2500, 3000]
@@ -52,7 +59,7 @@ function isTyping(target: EventTarget | null) {
   return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.isContentEditable)
 }
 
-export default function Interview({ pack, onExit }: Props) {
+export default function Interview({ pack, onExit, onReview }: Props) {
   const interviewer = pack.options.interviewer_name || 'Interviewer'
 
   const [phase, setPhaseState] = useState<Phase>('starting')
@@ -70,6 +77,9 @@ export default function Interview({ pack, onExit }: Props) {
   const [silenceMs, setSilenceMs] = useState(readSilence)
   const [draft, setDraft] = useState('')
   const [elapsed, setElapsed] = useState(0)
+  const [saving, setSaving] = useState<string | null>(null)
+  const [camStream, setCamStream] = useState<MediaStream | null>(null)
+  const [recording, setRecording] = useState<'webcam' | 'audio' | null>(null)
 
   const phaseRef = useRef<Phase>('starting')
   const pausedRef = useRef(false)
@@ -84,6 +94,12 @@ export default function Interview({ pack, onExit }: Props) {
   const clock = useRef({ startedAt: 0, pausedAt: 0, pausedTotal: 0 })
   const bottom = useRef<HTMLDivElement>(null)
   const silenceRef = useRef(silenceMs)
+  const recorderRef = useRef<SessionRecorder | null>(null)
+  const selfView = useRef<HTMLVideoElement>(null)
+  // When each turn happened, in ms on the recording's clock (pauses excluded).
+  const timeline = useRef(new Map<number, Span>())
+  const listenStart = useRef(0)
+  const speechStart = useRef<number | null>(null)
 
   const setPhase = (p: Phase) => {
     phaseRef.current = p
@@ -101,24 +117,50 @@ export default function Interview({ pack, onExit }: Props) {
     setMessages((ms) => ms.map((m) => (m.id === id ? { ...m, ...patch(m) } : m)))
   const dropMessage = (id: number) => setMessages((ms) => ms.filter((m) => m.id !== id))
 
-  const endSession = useCallback(async () => {
+  /** ms since the session started, excluding paused time: matches the recording. */
+  const clockNow = () => {
+    const c = clock.current
+    if (!c.startedAt) return 0
+    const now = pausedRef.current ? c.pausedAt : performance.now()
+    return Math.max(0, Math.round(now - c.startedAt - c.pausedTotal))
+  }
+
+  const timelineList = (): TurnTiming[] =>
+    [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end }))
+
+  /** End the interview: stop everything, save timings + recording, then open the review. */
+  const finishInterview = async () => {
     const id = sessionRef.current
     if (phaseRef.current === 'ended') return
     setPhase('ended')
     playerRef.current?.stop()
     await listenerRef.current?.cancel().catch(() => {})
     setMicSpeaking(false)
-    if (id) {
-      try {
-        await api.endSession(id)
-      } catch (e) {
-        setError((e as Error).message)
+    if (!id) return
+    let failed = false
+    try {
+      setSaving('Saving the session…')
+      const blob = recorderRef.current ? await recorderRef.current.stop() : null
+      recorderRef.current = null
+      setCamStream(null)
+      await api.endSession(id, timelineList())
+      if (blob && blob.size > 0) {
+        setSaving(`Uploading the recording (${(blob.size / 1e6).toFixed(1)} MB)…`)
+        await api.uploadRecording(id, blob)
       }
+    } catch (e) {
+      failed = true
+      setError(`Saving failed: ${(e as Error).message}`)
+    } finally {
+      setSaving(null)
     }
-  }, [])
+    if (!failed) onReview(id)
+  }
 
   const startListening = async () => {
     if (phaseRef.current === 'ended' || phaseRef.current === 'finished') return
+    listenStart.current = clockNow()
+    speechStart.current = null
     setPhase('listening')
     if (voiceRef.current && listenerRef.current) {
       try {
@@ -134,10 +176,12 @@ export default function Interview({ pack, onExit }: Props) {
   /** Play an interviewer reply as it streams in, then hand the turn back to me. */
   const runReply = async (
     stream: AsyncGenerator<InterviewEvent>,
-    opts: { candidateMsg?: number; turnEndedAt?: number; silenceMs?: number } = {},
+    opts: { candidateMsg?: number; turnEndedAt?: number; silenceMs?: number; answerSpan?: Span } = {},
   ) => {
     const player = playerRef.current!
     let replyMsg: number | null = null
+    let replyTurn: number | null = null
+    let replyStart: number | null = null
     let isFinal = false
     let sttMs: number | null = null
     const sentences: SpokenSentence[] = []
@@ -147,10 +191,11 @@ export default function Interview({ pack, onExit }: Props) {
         if (phaseRef.current === 'ended') return
         if (ev.type === 'session') {
           sessionRef.current = ev.session_id
-          clock.current.startedAt = performance.now()
+          if (!clock.current.startedAt) clock.current.startedAt = performance.now()
         } else if (ev.type === 'transcript') {
           sttMs = ev.stt_ms
           if (opts.candidateMsg) patchMessage(opts.candidateMsg, () => ({ text: ev.text, pending: false }))
+          if (opts.answerSpan) timeline.current.set(ev.turn_idx, opts.answerSpan)
         } else if (ev.type === 'sentence') {
           const s = { text: ev.text, audioBase64: ev.audio_wav_base64 }
           sentences.push(s)
@@ -168,6 +213,7 @@ export default function Interview({ pack, onExit }: Props) {
           if (ev.tts_error) console.warn('TTS error:', ev.tts_error)
           const first = ev.index === 0
           player.enqueue(s, () => {
+            if (replyStart === null) replyStart = clockNow()
             setCaption(ev.text)
             if (phaseRef.current === 'thinking') setPhase('speaking')
             if (first && opts.turnEndedAt) {
@@ -176,6 +222,7 @@ export default function Interview({ pack, onExit }: Props) {
           })
         } else if (ev.type === 'done') {
           isFinal = ev.is_final
+          replyTurn = ev.turn_idx
           if (replyMsg !== null) patchMessage(replyMsg, () => ({ text: ev.reply_text, expressions: ev.expressions }))
         } else if (ev.type === 'error') {
           throw new Error(ev.message)
@@ -195,10 +242,11 @@ export default function Interview({ pack, onExit }: Props) {
     }
     if (sentences.length) lastSentences.current = sentences
     await player.whenIdle()
+    if (replyTurn !== null) timeline.current.set(replyTurn, { start: replyStart ?? clockNow(), end: clockNow() })
     if (phaseRef.current === 'ended') return
     if (isFinal) {
       setPhase('finished')
-      await endSession()
+      await finishInterview()
     } else {
       await startListening()
     }
@@ -215,7 +263,9 @@ export default function Interview({ pack, onExit }: Props) {
     setError(null)
     const candidateMsg = addMessage({ speaker: 'candidate', text: '…', pending: true })
     const silenceMs = bySilence ? silenceRef.current : 0
-    void runReply(api.sendAudio(id, encodeWav(audio)), { candidateMsg, turnEndedAt, silenceMs })
+    const end = Math.max(0, clockNow() - silenceMs)
+    const answerSpan = { start: Math.min(speechStart.current ?? listenStart.current, end), end }
+    void runReply(api.sendAudio(id, encodeWav(audio)), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
   }
 
   const submitText = async () => {
@@ -227,7 +277,8 @@ export default function Interview({ pack, onExit }: Props) {
     setError(null)
     if (listenerRef.current?.listening) await listenerRef.current.cancel()
     const candidateMsg = addMessage({ speaker: 'candidate', text })
-    void runReply(api.sendText(id, text), { candidateMsg })
+    const answerSpan = { start: listenStart.current, end: clockNow() }
+    void runReply(api.sendText(id, text), { candidateMsg, answerSpan })
   }
 
   // ------------------------------------------------------------- setup -- //
@@ -235,6 +286,8 @@ export default function Interview({ pack, onExit }: Props) {
   const teardown = useCallback(() => {
     if (sessionRef.current && phaseRef.current !== 'ended') void api.endSession(sessionRef.current).catch(() => {})
     phaseRef.current = 'ended'
+    recorderRef.current?.release()
+    recorderRef.current = null
     void listenerRef.current?.destroy()
     playerRef.current?.destroy()
     listenerRef.current = null
@@ -265,7 +318,10 @@ export default function Interview({ pack, onExit }: Props) {
                 setNotice("I didn't hear anything. Try again.")
                 void startListening()
               },
-              onSpeechStart: () => setMicSpeaking(true),
+              onSpeechStart: () => {
+                if (speechStart.current === null) speechStart.current = clockNow()
+                setMicSpeaking(true)
+              },
               onSpeechEnd: () => setMicSpeaking(false),
             },
             silenceRef.current,
@@ -288,6 +344,22 @@ export default function Interview({ pack, onExit }: Props) {
         } else {
           setVoiceNote('Backend not reachable.')
         }
+
+        // Record the whole session (mic + interviewer voice, plus webcam if chosen).
+        const mode = getRecordMode()
+        if (mode !== 'off') {
+          try {
+            const rec = await SessionRecorder.create(player.ctx, player.output, mode)
+            recorderRef.current = rec
+            rec.start()
+            setRecording(rec.mode)
+            setCamStream(rec.camera)
+            if (mode === 'webcam' && !rec.camera) setNotice('Camera unavailable: recording audio only.')
+          } catch (e) {
+            setNotice(`Not recording: ${(e as Error).message}`)
+          }
+        }
+        clock.current.startedAt = performance.now()
 
         await runReply(api.startSession(pack.id))
       })().catch((e: Error) => setError(e.message))
@@ -316,6 +388,10 @@ export default function Interview({ pack, onExit }: Props) {
     bottom.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (selfView.current) selfView.current.srcObject = camStream
+  }, [camStream])
+
   // ---------------------------------------------------------- controls -- //
 
   const done = () => {
@@ -330,12 +406,14 @@ export default function Interview({ pack, onExit }: Props) {
       setPaused(true)
       clock.current.pausedAt = performance.now()
       player?.pause()
+      recorderRef.current?.pause()
       if (listener?.listening) await listener.suspend()
     } else {
       pausedRef.current = false
       setPaused(false)
       clock.current.pausedTotal += performance.now() - clock.current.pausedAt
       player?.resume()
+      recorderRef.current?.resume()
       if (phaseRef.current === 'listening' && voiceRef.current) await listener?.resume()
     }
   }
@@ -431,15 +509,24 @@ export default function Interview({ pack, onExit }: Props) {
           {pack.role || pack.title}
           {pack.company ? ` · ${pack.company}` : ''}
         </span>
+        {recording && live && (
+          <span className="rec" title={recording === 'webcam' ? 'Recording webcam and audio' : 'Recording audio'}>
+            ● REC
+          </span>
+        )}
         <span className="timer">{formatTime(elapsed)}</span>
         {live ? (
-          <button className="danger" onClick={() => void endSession()} disabled={!sessionRef.current}>
+          <button className="danger" onClick={() => void finishInterview()} disabled={!sessionRef.current}>
             End interview
           </button>
-        ) : (
-          <button onClick={onExit}>Back to setup</button>
+        ) : saving ? null : (
+          <>
+            {sessionRef.current && <button onClick={() => onReview(sessionRef.current!)}>Go to review</button>}
+            <button onClick={onExit}>Back to setup</button>
+          </>
         )}
       </div>
+      {saving && <div className="banner">{saving}</div>}
 
       {voiceNote && <div className="banner">{voiceNote}</div>}
       {needsUnlock && (
@@ -450,6 +537,7 @@ export default function Interview({ pack, onExit }: Props) {
 
       <div className="interview-body">
         <section className="stage">
+          {camStream && <video ref={selfView} className="self-view" autoPlay muted playsInline />}
           <div className={`stage-face ${phase === 'speaking' && !paused ? 'talking' : ''}`} aria-hidden>
             {interviewer.slice(0, 1).toUpperCase()}
           </div>
@@ -512,7 +600,6 @@ export default function Interview({ pack, onExit }: Props) {
                 )}
               </div>
             ))}
-            {phase === 'ended' && <div className="banner">Interview ended. Feedback reports arrive in Milestone 3.</div>}
             <div ref={bottom} />
           </div>
           {notice && <div className="banner">{notice}</div>}

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { api, type Pack, type PackInput } from '../api'
+import { api, type Pack, type PackInput, type SessionListItem } from '../api'
+import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
 
 const EMPTY: PackInput = {
   title: '',
@@ -37,8 +38,14 @@ export default function Setup({ onStart }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [voices, setVoices] = useState<string[]>(['af_heart'])
+  const [recordMode, setMode] = useState<RecordMode>(getRecordMode)
+  const [sessions, setSessions] = useState<SessionListItem[]>([])
 
   useEffect(() => {
+    api
+      .listSessions(8)
+      .then(setSessions)
+      .catch(() => {})
     api
       .voices()
       .then((v) => setVoices(v.voices))
@@ -183,6 +190,22 @@ export default function Setup({ onStart }: Props) {
           </label>
         </div>
 
+        <label className="inline">
+          Record the session
+          <select
+            value={recordMode}
+            onChange={(e) => {
+              const m = e.target.value as RecordMode
+              setMode(m)
+              setRecordMode(m)
+            }}
+          >
+            <option value="webcam">Webcam + audio</option>
+            <option value="audio">Audio only</option>
+            <option value="off">Don't record</option>
+          </select>
+        </label>
+
         {error && <div className="banner error">{error}</div>}
         <button type="submit" className="primary" disabled={saving}>
           {saving ? 'Saving…' : 'Save pack & start interview'}
@@ -206,6 +229,22 @@ export default function Setup({ onStart }: Props) {
             </div>
           </div>
         ))}
+        {sessions.length > 0 && (
+          <>
+            <h2 className="spaced">Recent sessions</h2>
+            {sessions.map((s) => (
+              <a key={s.id} className="session-link" href={`#/review/${s.id}`}>
+                <span>
+                  <strong>{s.pack_title}</strong>
+                  <span className="muted small"> · {new Date(s.started_at).toLocaleString()}</span>
+                </span>
+                <span className="score-chip">
+                  {s.overall_score != null ? s.overall_score.toFixed(1) : s.report_status === 'pending' ? '…' : '–'}
+                </span>
+              </a>
+            ))}
+          </>
+        )}
       </aside>
     </div>
   )

@@ -122,6 +122,11 @@ def keyword_prompt(role: str, company: str, jd: str, limit: int = 40) -> str:
         if a not in _STOP:
             counts[f"{a} {b}"] += 2
     keywords = [w for w, _ in counts.most_common(limit)]
-    head = f"Job interview for {role or 'a role'}" + (f" at {company}" if company else "") + "."
+    # Whisper tends to drop "um"/"uh". Starting the prompt with fillers makes it
+    # keep them, so the feedback report can count them.
+    head = (
+        "Umm, let me think, like, hmm... Okay, so, uh, here's what I did. "
+        f"Job interview for {role or 'a role'}" + (f" at {company}" if company else "") + "."
+    )
     prompt = head + (" Topics: " + ", ".join(keywords) + "." if keywords else "")
-    return prompt[:800]
+    return prompt[:900]

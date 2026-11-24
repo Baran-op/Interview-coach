@@ -41,7 +41,7 @@ export interface WordTiming {
 /** Events streamed (NDJSON) by POST /sessions and POST /sessions/{id}/turn. */
 export type InterviewEvent =
   | { type: 'session'; session_id: string }
-  | { type: 'transcript'; text: string; stt_ms: number | null }
+  | { type: 'transcript'; text: string; stt_ms: number | null; turn_idx: number }
   | {
       type: 'sentence'
       index: number
@@ -54,12 +54,82 @@ export type InterviewEvent =
     }
   | {
       type: 'done'
+      turn_idx: number | null
       reply_text: string
       expressions: Expression[]
       is_final: boolean
       timings: { first_sentence_ms: number | null; total_ms: number }
     }
   | { type: 'error'; message: string }
+
+export interface TurnTiming {
+  turn_idx: number
+  t_start_ms: number | null
+  t_end_ms: number | null
+}
+
+export interface Turn {
+  idx: number
+  speaker: 'interviewer' | 'candidate'
+  text: string
+  expressions: Expression[]
+  t_start_ms: number | null
+  t_end_ms: number | null
+}
+
+export type ReportStatus = 'pending' | 'ready' | 'error' | 'none'
+
+export interface SessionInfo {
+  id: string
+  pack_id: string
+  started_at: number
+  ended_at: number | null
+  overall_score: number | null
+  has_recording: boolean
+  pack: Pack | null
+  turns: Turn[]
+  report_status: ReportStatus | null
+}
+
+export interface SessionListItem {
+  id: string
+  pack_id: string
+  pack_title: string
+  role: string
+  company: string
+  started_at: number
+  ended_at: number | null
+  overall_score: number | null
+  report_status: ReportStatus | null
+}
+
+export type Criterion = 'relevance' | 'structure' | 'specificity' | 'evidence'
+
+export interface AnswerFeedback {
+  question_turn: number | null
+  question: string
+  answer_summary: string
+  scores: Record<Criterion, number>
+  average: number
+  better_answer: string
+  tips: string[]
+}
+
+export interface Report {
+  overall_score: number
+  summary: string
+  answers: AnswerFeedback[]
+  filler_words: { count: number; examples: string[]; by_word: Record<string, number> }
+  avg_answer_seconds: number | null
+  top_fixes: string[]
+}
+
+export interface ReportResponse {
+  status: ReportStatus
+  report: Report | null
+  report_md: string | null
+  error: string | null
+}
 
 export interface ModelState {
   model: string
@@ -137,6 +207,24 @@ export const api = {
     form.append('audio', wav, 'answer.wav')
     return streamEvents(`/sessions/${sessionId}/turn`, { body: form })
   },
-  endSession: (sessionId: string) =>
-    request<{ ended: boolean }>(`/sessions/${sessionId}/end`, { method: 'POST' }),
+  endSession: (sessionId: string, timeline: TurnTiming[] = []) =>
+    request<{ ended: boolean }>(`/sessions/${sessionId}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ timeline }),
+    }),
+  uploadRecording: async (sessionId: string, blob: Blob) => {
+    const form = new FormData()
+    form.append('recording', blob, 'recording.webm')
+    const res = await fetch(`/api/sessions/${sessionId}/recording`, { method: 'POST', body: form })
+    if (!res.ok) throw await errorFrom(res)
+    return (await res.json()) as { bytes: number }
+  },
+  listSessions: (limit = 10) => request<SessionListItem[]>(`/sessions?limit=${limit}`),
+  getSession: (sessionId: string) => request<SessionInfo>(`/sessions/${sessionId}`),
+  getReport: (sessionId: string) => request<ReportResponse>(`/sessions/${sessionId}/report`),
+  regenerateReport: (sessionId: string) =>
+    request<{ status: ReportStatus }>(`/sessions/${sessionId}/report`, { method: 'POST' }),
+  recordingUrl: (sessionId: string, download = false) =>
+    `/api/sessions/${sessionId}/recording${download ? '?download=1' : ''}`,
+  reportMdUrl: (sessionId: string) => `/api/sessions/${sessionId}/report.md`,
 }

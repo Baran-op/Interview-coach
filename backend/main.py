@@ -20,17 +20,19 @@ import asyncio
 import json
 import logging
 import os
+import re
+import shutil
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, gpu, stt, tts
+from . import db, feedback, gpu, stt, tts
 from .brain import (
     OPENING_CUE,
     BrainError,
@@ -84,6 +86,22 @@ class LiveSession:
 
 # Active interviews (lost on server restart).
 LIVE: dict[str, LiveSession] = {}
+# Feedback reports being written: session_id -> task.
+REPORT_TASKS: dict[str, asyncio.Task] = {}
+
+
+def recordings_dir() -> Path:
+    return db.DATA_DIR / "recordings"
+
+
+def start_report(session_id: str) -> None:
+    task = REPORT_TASKS.get(session_id)
+    if task and not task.done():
+        return
+    db.set_report_pending(session_id)
+    task = asyncio.create_task(feedback.generate(session_id))
+    REPORT_TASKS[session_id] = task
+    task.add_done_callback(lambda _: REPORT_TASKS.pop(session_id, None))
 
 
 async def load_models() -> None:
@@ -137,6 +155,17 @@ class SessionIn(BaseModel):
     pack_id: str
 
 
+class TurnTiming(BaseModel):
+    turn_idx: int
+    t_start_ms: int | None = None
+    t_end_ms: int | None = None
+
+
+class EndIn(BaseModel):
+    # When each turn started/ended, in ms from the start of the recording.
+    timeline: list[TurnTiming] = []
+
+
 # ------------------------------------------------------------- streaming --- #
 
 def _line(obj: dict) -> bytes:
@@ -178,6 +207,7 @@ async def speak(
 
     producer = asyncio.create_task(produce())
     full_text, expressions, is_final, index = "", [], False, 0
+    turn_idx: int | None = None
     first_audio_ms = None
     try:
         for ev in prelude:
@@ -217,8 +247,11 @@ async def speak(
                 "tts_error": tts_error,
             })
             index += 1
+        if full_text:
+            turn_idx = db.add_turn(session_id, "interviewer", full_text, expressions)
         yield _line({
             "type": "done",
+            "turn_idx": turn_idx,
             "reply_text": full_text,
             "expressions": expressions,
             "is_final": is_final,
@@ -230,7 +263,7 @@ async def speak(
     finally:
         if not producer.done():
             producer.cancel()
-        if full_text:
+        if full_text and turn_idx is None:  # stream cut short: keep what was said
             db.add_turn(session_id, "interviewer", full_text, expressions)
         if live.lock.locked():
             live.lock.release()
@@ -344,24 +377,49 @@ async def take_turn(session_id: str, request: Request):
         live.lock.release()
         raise
 
-    db.add_turn(session_id, "candidate", answer)
+    turn_idx = db.add_turn(session_id, "candidate", answer)
     return StreamingResponse(
         speak(session_id, live, live.brain.stream(answer),
-              [{"type": "transcript", "text": answer, "stt_ms": stt_ms}], t0),
+              [{"type": "transcript", "text": answer, "stt_ms": stt_ms, "turn_idx": turn_idx}], t0),
         media_type="application/x-ndjson",
     )
 
 
 @app.post("/sessions/{session_id}/end")
-async def end_session(session_id: str):
+async def end_session(session_id: str, body: EndIn | None = None):
+    """Close the Claude client, store turn timings and start the feedback report."""
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
     live = LIVE.pop(session_id, None)
     if live:
         await live.brain.close()
+    if body and body.timeline:
+        db.set_turn_times(session_id, [t.model_dump() for t in body.timeline])
     db.end_session(session_id)
-    # Feedback report generation arrives in Milestone 3.
-    return {"session_id": session_id, "ended": True}
+    report = db.get_report(session_id)
+    if not report or report["status"] == "error":
+        start_report(session_id)
+    return {"session_id": session_id, "ended": True, "report_status": "pending"}
+
+
+@app.get("/sessions")
+async def list_sessions(limit: int = 20, pack_id: str | None = None):
+    return db.list_sessions(limit=max(1, min(limit, 200)), pack_id=pack_id)
+
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    report = db.get_report(session_id)
+    return {
+        **session,
+        "has_recording": bool(session.get("recording_path")) and Path(session["recording_path"]).exists(),
+        "pack": db.get_pack(session["pack_id"]),
+        "turns": db.list_turns(session_id),
+        "report_status": report["status"] if report else None,
+    }
 
 
 @app.get("/sessions/{session_id}/turns")
@@ -369,3 +427,74 @@ async def session_turns(session_id: str):
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
     return db.list_turns(session_id)
+
+
+@app.post("/sessions/{session_id}/recording")
+async def upload_recording(session_id: str, recording: UploadFile):
+    if not db.get_session(session_id):
+        raise HTTPException(404, "Session not found")
+    folder = recordings_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{session_id}.webm"
+    tmp = path.with_suffix(".part")
+    with tmp.open("wb") as f:
+        await asyncio.to_thread(shutil.copyfileobj, recording.file, f, 1024 * 1024)
+    tmp.replace(path)
+    db.set_recording(session_id, str(path))
+    return {"session_id": session_id, "bytes": path.stat().st_size}
+
+
+def _download_name(session: dict, ext: str) -> str:
+    from datetime import datetime
+
+    pack = db.get_pack(session["pack_id"]) or {}
+    slug = re.sub(r"[^a-z0-9]+", "-", (pack.get("title") or "interview").lower()).strip("-")[:40]
+    when = datetime.fromtimestamp(session["started_at"] / 1000).strftime("%Y-%m-%d-%H%M")
+    return f"{slug or 'interview'}-{when}.{ext}"
+
+
+@app.get("/sessions/{session_id}/recording")
+async def get_recording(session_id: str, download: bool = False):
+    session = db.get_session(session_id)
+    if not session or not session.get("recording_path") or not Path(session["recording_path"]).exists():
+        raise HTTPException(404, "No recording for this session")
+    return FileResponse(
+        session["recording_path"],
+        media_type="video/webm",
+        filename=_download_name(session, "webm") if download else None,
+        content_disposition_type="attachment" if download else "inline",
+    )
+
+
+@app.get("/sessions/{session_id}/report")
+async def get_report(session_id: str):
+    if not db.get_session(session_id):
+        raise HTTPException(404, "Session not found")
+    report = db.get_report(session_id)
+    if not report:
+        return {"status": "none", "report": None, "report_md": None, "error": None}
+    return {k: report.get(k) for k in ("status", "report", "report_md", "error")}
+
+
+@app.post("/sessions/{session_id}/report")
+async def regenerate_report(session_id: str):
+    """Write the report again (one more Claude request)."""
+    if not db.get_session(session_id):
+        raise HTTPException(404, "Session not found")
+    if session_id in LIVE:
+        raise HTTPException(409, "End the interview first")
+    start_report(session_id)
+    return {"status": "pending"}
+
+
+@app.get("/sessions/{session_id}/report.md")
+async def get_report_md(session_id: str):
+    session = db.get_session(session_id)
+    report = db.get_report(session_id) if session else None
+    if not report or not report.get("report_md"):
+        raise HTTPException(404, "No report for this session yet")
+    return PlainTextResponse(
+        report["report_md"],
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{_download_name(session, "md")}"'},
+    )

@@ -61,9 +61,29 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+# Columns added after Milestone 1 (ALTER TABLE for existing databases).
+_EXTRA_COLUMNS = {
+    "reports": {
+        "status": "TEXT",          # 'pending' | 'ready' | 'error'
+        "error": "TEXT",
+        "created_at": "INTEGER",
+    },
+}
+
+
 def init() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for table, cols in _EXTRA_COLUMNS.items():
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols.items():
+                if name not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        # A report still 'pending' at startup was interrupted by a restart.
+        conn.execute(
+            "UPDATE reports SET status = 'error', error = 'Interrupted by a server restart' "
+            "WHERE status = 'pending'"
+        )
 
 
 # ---------------------------------------------------------------- packs ---- #
@@ -127,7 +147,8 @@ def get_session(session_id: str) -> dict | None:
     return dict(row) if row else None
 
 
-def add_turn(session_id: str, speaker: str, text: str, expressions: list | None = None) -> None:
+def add_turn(session_id: str, speaker: str, text: str, expressions: list | None = None) -> int:
+    """Append a turn and return its index within the session."""
     with connect() as conn:
         (idx,) = conn.execute(
             "SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)
@@ -136,6 +157,79 @@ def add_turn(session_id: str, speaker: str, text: str, expressions: list | None 
             "INSERT INTO turns (session_id, idx, speaker, text, expressions_json) VALUES (?, ?, ?, ?, ?)",
             (session_id, idx, speaker, text, json.dumps(expressions) if expressions is not None else None),
         )
+    return idx
+
+
+def set_turn_times(session_id: str, timeline: list[dict]) -> None:
+    """timeline: [{turn_idx, t_start_ms, t_end_ms}], times relative to the recording start."""
+    with connect() as conn:
+        conn.executemany(
+            "UPDATE turns SET t_start_ms = ?, t_end_ms = ? WHERE session_id = ? AND idx = ?",
+            [(t.get("t_start_ms"), t.get("t_end_ms"), session_id, t["turn_idx"]) for t in timeline],
+        )
+
+
+def set_recording(session_id: str, path: str) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE sessions SET recording_path = ? WHERE id = ?", (path, session_id))
+
+
+def set_overall_score(session_id: str, score: float | None) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE sessions SET overall_score = ? WHERE id = ?", (score, session_id))
+
+
+def list_sessions(limit: int = 20, pack_id: str | None = None) -> list[dict]:
+    sql = (
+        "SELECT s.*, p.title AS pack_title, p.role, p.company, r.status AS report_status "
+        "FROM sessions s JOIN packs p ON p.id = s.pack_id "
+        "LEFT JOIN reports r ON r.session_id = s.id "
+    )
+    args: list = []
+    if pack_id:
+        sql += "WHERE s.pack_id = ? "
+        args.append(pack_id)
+    sql += "ORDER BY s.started_at DESC LIMIT ?"
+    args.append(limit)
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+# -------------------------------------------------------------- reports ---- #
+
+def set_report_pending(session_id: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO reports (session_id, status, error, created_at) VALUES (?, 'pending', NULL, ?) "
+            "ON CONFLICT(session_id) DO UPDATE SET status = 'pending', error = NULL",
+            (session_id, _now_ms()),
+        )
+
+
+def save_report(session_id: str, report: dict, report_md: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE reports SET report_json = ?, report_md = ?, status = 'ready', error = NULL, created_at = ? "
+            "WHERE session_id = ?",
+            (json.dumps(report), report_md, _now_ms(), session_id),
+        )
+
+
+def set_report_error(session_id: str, error: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE reports SET status = 'error', error = ? WHERE session_id = ?", (error, session_id)
+        )
+
+
+def get_report(session_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM reports WHERE session_id = ?", (session_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["report"] = json.loads(d.pop("report_json")) if d.get("report_json") else None
+    return d
 
 
 def list_turns(session_id: str) -> list[dict]:
