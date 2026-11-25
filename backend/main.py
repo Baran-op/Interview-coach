@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, drill, feedback, gpu, stt, tts
+from . import db, drill, feedback, gpu, research, stt, tts
 from .categories import resolve_category
 from .brain import (
     OPENING_CUE,
@@ -493,6 +493,21 @@ async def drill_attempt(pack_id: str, request: Request):
     audio_path = await asyncio.to_thread(_save_drill_audio, attempt_id, audio_bytes) if audio_bytes else None
     attempt = db.add_attempt(attempt_id, pack_id, key, question, category, answer, seconds, audio_path, result)
     return {"attempt": _attempt_out(attempt), "previous": _attempt_out(previous)}
+
+
+class ResearchIn(BaseModel):
+    company: str = Field(..., min_length=1, max_length=200)
+    role: str = Field("", max_length=200)
+    jd: str = Field("", max_length=50000)
+
+
+@app.post("/research")
+async def research_company(body: ResearchIn):
+    """Draft company notes from the web (one Claude request with web tools). Nothing is saved."""
+    try:
+        return await research.research_company(body.company, body.role, body.jd)
+    except research.ResearchError as exc:
+        raise HTTPException(502, str(exc))
 
 
 class TtsIn(BaseModel):

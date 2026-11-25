@@ -291,6 +291,11 @@ export const api = {
     if (!res.ok) throw await errorFrom(res)
     return ((await res.json()) as { text: string }).text
   },
+  research: (company: string, role: string, jd: string) =>
+    request<{ notes: string; sources: string[] }>('/research', {
+      method: 'POST',
+      body: JSON.stringify({ company, role, jd }),
+    }),
   listPacks: () => request<Pack[]>('/packs'),
   getPack: (id: string) => request<Pack>(`/packs/${id}`),
   updatePack: (id: string, pack: PackInput) =>

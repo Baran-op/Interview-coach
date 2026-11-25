@@ -47,6 +47,8 @@ export default function Setup({ onStart, editPackId }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [researching, setResearching] = useState(false)
+  const [sources, setSources] = useState<string[]>([])
   const [voices, setVoices] = useState<string[]>(['af_heart'])
   const [recordMode, setMode] = useState<RecordMode>(getRecordMode)
   const [sessions, setSessions] = useState<SessionListItem[]>([])
@@ -89,6 +91,21 @@ export default function Setup({ onStart, editPackId }: Props) {
       set(key, isPdf ? await api.extractPdfText(file) : await file.text())
     } catch (err) {
       setError((err as Error).message)
+    }
+  }
+
+  const draftNotes = async () => {
+    if (form.company_notes.trim() && !window.confirm('Replace the current company notes with a draft from the web?')) return
+    setError(null)
+    setResearching(true)
+    try {
+      const r = await api.research(form.company, form.role, form.jd)
+      set('company_notes', r.notes)
+      setSources(r.sources)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setResearching(false)
     }
   }
 
@@ -175,9 +192,29 @@ export default function Setup({ onStart, editPackId }: Props) {
         </label>
 
         <label>
-          Company notes
+          <span className="label-row">
+            Company notes
+            <button type="button" className="ghost small" disabled={!form.company.trim() || researching} onClick={draftNotes}>
+              {researching ? 'Searching the web (up to about a minute)...' : 'Draft from the web'}
+            </button>
+          </span>
           <textarea rows={4} value={form.company_notes} onChange={(e) => set('company_notes', e.target.value)} placeholder="Mission, products, recent news, values" />
         </label>
+        <p className="hint">
+          "Draft from the web" uses your Claude usage (one request with web search). The draft is only filled in here: check it, edit it, and it is saved with the pack.
+        </p>
+        {sources.length > 0 && (
+          <div className="hint">
+            Sources:
+            <ul>
+              {sources.map((u) => (
+                <li key={u}>
+                  <a href={u} target="_blank" rel="noreferrer">{u}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="row">
           <label>

@@ -473,7 +473,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 - [x] F1. 6d Probe like a real interviewer
 - [x] F2. 6c Interview stage and role-play
-- [ ] F3. 6b Draft company notes from the web
+- [x] F3. 6b Draft company notes from the web
 
 **Phase G: prep**
 

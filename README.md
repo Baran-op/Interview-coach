@@ -191,6 +191,7 @@ Optional `.env` settings:
 | `KOKORO_MODEL` | `mlx-community/Kokoro-82M-bf16` | |
 | `KOKORO_VOICE` | `af_heart` | Default voice for packs that don't set one |
 | `INTERVIEWER_MODEL` | your plan's default | Pin the Claude model |
+| `RESEARCH_MODEL` | your plan's default | Model for "Draft from the web" |
 | `IDLE_TIMEOUT_MIN` | `30` | Interviews idle this long are ended and scored automatically (`0` disables) |
 | `FEEDBACK_MODEL` | same as the interviewer | Model for the feedback report |
 
@@ -228,6 +229,7 @@ those words automatically.
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, then your own) |
 | POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
+| POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s) |
 | POST | `/tts` | `{text, voice?}` -> `{sentences:[...]}`, each shaped like the NDJSON `sentence` event (reads a question aloud) |
 
 `/sessions` and `/turn` respond with NDJSON (one JSON object per line), so the first
