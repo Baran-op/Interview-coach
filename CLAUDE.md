@@ -31,8 +31,8 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
 ## Stack and layout
 
 - `backend/` Python 3.11, FastAPI. `main.py` routes, `brain.py` Claude Agent SDK interviewer,
-  `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `drill.py` drill mode (question list, one-Claude-call scoring with `prompts/drill.txt`, `question_key`), `delivery.py` per-answer delivery stats (`text_stats`, `audio_stats` from the saved answer WAVs, `answer_delivery` adds `delivery` to each report answer, `TARGET_SECONDS`), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
-  `prompts/` (`interviewer.txt`, `feedback.txt`).
+  `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `prep.py` prep sheet per pack (`source_hash`, `clean_sheet`, one-Claude-call `write` with `prompts/prep.txt`; stored in the `prep` table, feeds drill's `prep` source), `drill.py` drill mode (question list, one-Claude-call scoring with `prompts/drill.txt`, `question_key`), `delivery.py` per-answer delivery stats (`text_stats`, `audio_stats` from the saved answer WAVs, `answer_delivery` adds `delivery` to each report answer, `TARGET_SECONDS`), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
+  `prompts/` (`interviewer.txt`, `feedback.txt`, `drill.txt`, `prep.txt`).
 - `backend/research.py` + `prompts/research.txt`: "Draft from the web" company notes (`POST /research`); the only call with web tools (WebSearch/WebFetch), the interviewer stays tool-less.
 - `frontend/` Vite + React + TypeScript. `src/pages` (incl. `Drill.tsx`, route `#/drill/<pack id>?q=<question>`), `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.

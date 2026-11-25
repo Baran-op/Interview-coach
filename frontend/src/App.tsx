@@ -5,6 +5,7 @@ import Interview from './pages/Interview'
 import Review from './pages/Review'
 import History from './pages/History'
 import Drill from './pages/Drill'
+import Prep from './pages/Prep'
 
 type Screen =
   | { name: 'setup'; editPackId?: string }
@@ -12,14 +13,17 @@ type Screen =
   | { name: 'review'; sessionId: string }
   | { name: 'history' }
   | { name: 'drill'; packId: string; q: string | null }
+  | { name: 'prep'; packId: string }
 
-// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>.
+// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>, #/prep/<pack id>.
 function fromHash(current: Screen): Screen {
   const hash = window.location.hash
   const review = hash.match(/^#\/review\/([\w-]+)/)
   if (review) return { name: 'review', sessionId: review[1] }
   const drill = hash.match(/^#\/drill\/([\w-]+)(?:\?(.*))?/)
   if (drill) return { name: 'drill', packId: drill[1], q: new URLSearchParams(drill[2] ?? '').get('q') }
+  const prep = hash.match(/^#\/prep\/([\w-]+)/)
+  if (prep) return { name: 'prep', packId: prep[1] }
   const edit = hash.match(/^#\/edit\/([\w-]+)/)
   if (edit) return { name: 'setup', editPackId: edit[1] }
   if (hash.startsWith('#/history')) return { name: 'history' }
@@ -84,6 +88,7 @@ export default function App() {
         )}
         {screen.name === 'history' && <History onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
         {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} />}
+        {screen.name === 'prep' && <Prep key={screen.packId} packId={screen.packId} />}
         {screen.name === 'interview' && (
           <Interview
             pack={screen.pack}

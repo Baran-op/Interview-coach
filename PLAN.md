@@ -477,4 +477,4 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 **Phase G: prep**
 
-- [ ] G1. 7 Prep sheet, with its likely questions added to the drill list
+- [x] G1. 7 Prep sheet, with its likely questions added to the drill list

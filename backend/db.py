@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS attempts (
     result_json TEXT,           -- scores, average, tips, improved, better_answer, delivery
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS prep (
+    pack_id TEXT PRIMARY KEY REFERENCES packs(id),
+    source_hash TEXT,           -- SHA-1 of JD, CV and company notes when the sheet was written
+    prep_json TEXT,
+    created_at INTEGER
+);
 CREATE INDEX IF NOT EXISTS attempts_by_question ON attempts (pack_id, question_key, created_at);
 """
 
@@ -312,8 +318,30 @@ def delete_pack(pack_id: str) -> list[str]:
         paths += [r["audio_path"] for r in conn.execute(
             "SELECT audio_path FROM attempts WHERE pack_id = ? AND audio_path IS NOT NULL", (pack_id,))]
         conn.execute("DELETE FROM attempts WHERE pack_id = ?", (pack_id,))
+        conn.execute("DELETE FROM prep WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
     return paths
+
+
+# ------------------------------------------------------------------ prep --- #
+
+def get_prep(pack_id: str) -> dict | None:
+    """The pack's prep sheet: {sheet, source_hash, created_at}, or None."""
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM prep WHERE pack_id = ?", (pack_id,)).fetchone()
+    if not row or not row["prep_json"]:
+        return None
+    return {"sheet": json.loads(row["prep_json"]), "source_hash": row["source_hash"],
+            "created_at": row["created_at"]}
+
+
+def save_prep(pack_id: str, source_hash: str, sheet: dict) -> dict:
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO prep (pack_id, source_hash, prep_json, created_at) VALUES (?, ?, ?, ?)",
+            (pack_id, source_hash, json.dumps(sheet), _now_ms()),
+        )
+    return get_prep(pack_id)
 
 
 # -------------------------------------------------------------- attempts --- #

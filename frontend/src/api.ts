@@ -186,6 +186,30 @@ export interface PackHistory {
   last_used: number
 }
 
+export interface PrepStory {
+  title: string
+  competencies: string[]
+  situation: string
+  task: string
+  action: string
+  result: string
+  numbers: string[]
+}
+
+export interface PrepSheet {
+  likely_questions: { question: string; category: string; why: string }[]
+  gaps: { requirement: string; cv_evidence: string | null; how_to_address: string }[]
+  stories: PrepStory[]
+  questions_to_ask: string[]
+}
+
+export interface PrepResponse {
+  prep: PrepSheet | null
+  created_at?: number
+  /** True when the JD, CV or company notes changed since the sheet was written. */
+  stale?: boolean
+}
+
 export type DrillSource = 'starter' | 'report' | 'prep' | 'custom'
 
 export interface DrillQuestion {
@@ -339,6 +363,9 @@ export const api = {
   getReport: (sessionId: string) => request<ReportResponse>(`/sessions/${sessionId}/report`),
   regenerateReport: (sessionId: string) =>
     request<{ status: ReportStatus }>(`/sessions/${sessionId}/report`, { method: 'POST' }),
+  getPrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`),
+  /** One Claude request. */
+  writePrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`, { method: 'POST' }),
   drillQuestions: (packId: string) => request<{ questions: DrillQuestion[] }>(`/packs/${packId}/drill`),
   drillAttempts: (packId: string, key: string) =>
     request<{ attempts: DrillAttempt[] }>(`/packs/${packId}/drill/attempts?key=${encodeURIComponent(key)}`),

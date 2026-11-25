@@ -12,7 +12,7 @@ import os
 import re
 from pathlib import Path
 
-from . import claude_json, db, delivery
+from . import claude_json, db, delivery, prep
 from .feedback import CRITERIA, _score
 
 log = logging.getLogger("interview-coach.drill")
@@ -68,22 +68,19 @@ def weak_report_questions(reports: list[dict]) -> list[dict]:
     return out
 
 
-def prep_questions(pack: dict) -> list[dict]:
-    """Likely questions from the pack's prep sheet. Stub until the prep sheet exists (PLAN G1)."""
-    return []
-
-
 def _avg(attempt: dict) -> float | None:
     return ((attempt or {}).get("result") or {}).get("average")
 
 
-def assemble_questions(pack: dict, reports: list[dict], attempts: list[dict]) -> list[dict]:
+def assemble_questions(pack: dict, reports: list[dict], attempts: list[dict],
+                       prep_sheet: dict | None = None) -> list[dict]:
     """Starters, weak report questions, prep questions, then custom questions that have attempts.
 
     `attempts` is the pack's attempts, oldest first. Each entry gets `key`, the attempt count and
-    the latest and best attempt averages (None until there is one).
+    the latest and best attempt averages (None until there is one). `prep_sheet` is the pack's
+    saved prep sheet, whose likely questions come in with source `prep`.
     """
-    candidates = starter_questions(pack) + weak_report_questions(reports) + prep_questions(pack)
+    candidates = starter_questions(pack) + weak_report_questions(reports) + prep.drill_questions(prep_sheet)
     by_key: dict[str, list[dict]] = {}
     for a in attempts:
         by_key.setdefault(a["question_key"], []).append(a)
@@ -190,4 +187,5 @@ def questions_for_pack(pack: dict) -> list[dict]:
         r = (db.get_report(s["id"]) or {}).get("report")
         if r:
             reports.append(r)
-    return assemble_questions(pack, reports, db.list_attempts(pack["id"]))
+    record = db.get_prep(pack["id"])
+    return assemble_questions(pack, reports, db.list_attempts(pack["id"]), (record or {}).get("sheet"))

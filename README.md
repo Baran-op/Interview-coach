@@ -171,6 +171,7 @@ minute.
   sessions. Deleting also removes the recordings.
 - The Review page compares each report with your **previous attempt** at the same pack
   (overall score, each criterion, filler words; partial sessions are skipped), and has **Run this pack again**.
+- **Prep sheet** (`#/prep/<pack id>`, **Prep** button in Setup's saved packs and History): likely questions, CV against the job (every requirement with CV evidence or marked missing), 6-8 STAR stories built only from your CV (with [placeholders]) and questions to ask. Each likely question has a **Practise** button that opens Drill, and the questions also join the Drill list. Writing or rewriting costs one Claude request; the page warns when the pack changed since the sheet was written. Download as Markdown.
 - **Drill** (`#/drill/<pack id>?q=<question>`): practise one question at a time. Open it with the
   **Drill** button in Setup (saved packs) or History, or **Practise this question** under an answer
   in Review. The left list has starter questions, weak questions from your reports (marked "weak")
@@ -226,7 +227,9 @@ those words automatically.
 | PUT, DELETE | `/packs/{id}` | Edit a pack; delete it with all its sessions and recordings |
 | GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
-| GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, then your own) |
+| GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
+| GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale}`; `stale` is true when the JD, CV or company notes changed since it was written |
+| POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape |
 | POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
 | POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s) |

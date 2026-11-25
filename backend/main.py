@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, drill, feedback, gpu, research, stt, tts
+from . import db, drill, feedback, gpu, prep, research, stt, tts
 from .categories import resolve_category
 from .brain import (
     OPENING_CUE,
@@ -410,6 +410,36 @@ async def delete_pack(pack_id: str):
         raise HTTPException(409, "An interview with this pack is still running")
     _remove_files(db.delete_pack(pack_id))
     return {"deleted": pack_id}
+
+
+def _prep_out(pack: dict, record: dict | None) -> dict:
+    if not record:
+        return {"prep": None}
+    return {"prep": record["sheet"], "created_at": record["created_at"],
+            "stale": record["source_hash"] != prep.source_hash(pack)}
+
+
+@app.get("/packs/{pack_id}/prep")
+async def get_prep(pack_id: str):
+    pack = db.get_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Pack not found")
+    return _prep_out(pack, db.get_prep(pack_id))
+
+
+@app.post("/packs/{pack_id}/prep")
+async def write_prep(pack_id: str):
+    """Write (or rewrite) the pack's prep sheet. One Claude request."""
+    pack = db.get_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Pack not found")
+    if not (pack.get("jd") or "").strip() and not (pack.get("profile") or "").strip():
+        raise HTTPException(422, "Add a job description or CV to the pack first")
+    try:
+        sheet = await prep.write(pack)
+    except prep.PrepError as exc:
+        raise HTTPException(502, str(exc))
+    return _prep_out(pack, db.save_prep(pack_id, prep.source_hash(pack), sheet))
 
 
 @app.get("/packs/{pack_id}/drill")
