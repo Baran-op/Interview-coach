@@ -108,25 +108,105 @@ _STOP = {
 }
 
 
-def keyword_prompt(role: str, company: str, jd: str, limit: int = 40) -> str:
-    """Seed Whisper with role vocabulary from the JD (acronyms, product names...)."""
-    words = re.findall(r"[A-Za-z][A-Za-z0-9+#./-]*[A-Za-z0-9+#]|[A-Z]{2,}", jd or "")
+_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9+#./-]*[A-Za-z0-9+#]|[A-Z]{2,}|[A-Za-z]")
+_SENTENCE_END = set(".!?:")
+_BULLETS = set("-*\u2022\u2013\u2014\u25cf\u25aa>")
+MAX_PROMPT_TOKENS = 180
+MAX_PROMPT_CHARS = 600
+
+
+def _is_special(w: str) -> bool:
+    return w.isupper() and len(w) > 1 or any(c.isdigit() for c in w) or any(c in w for c in "+#.")
+
+
+def _starts_sentence(text: str, pos: int) -> bool:
+    """True if the word at pos opens a sentence, line or bullet."""
+    i = pos - 1
+    while i >= 0 and text[i] in " \t":
+        i -= 1
+    if i < 0:
+        return True
+    c = text[i]
+    return c in "\r\n" or c in _SENTENCE_END or c in _BULLETS
+
+
+def extract_terms(text: str) -> list[str]:
+    """Names, tools and acronyms from free text, most frequent first.
+
+    A capitalised word that merely starts a sentence or line is skipped unless it is an
+    acronym or contains a digit or one of +#. Two-word names are kept whole.
+    """
+    text = text or ""
     counts: Counter[str] = Counter()
-    for w in words:
-        if w in _STOP:
+    first: dict[str, str] = {}
+    toks = [(m.group(), m.start(), m.end()) for m in _TOKEN.finditer(text)]
+    prev_name: tuple[str, int] | None = None   # capitalised word right before this one
+    for w, start, end in toks:
+        if len(w) < 2 or w in _STOP:
+            prev_name = None
             continue
-        if w.isupper() or any(c.isdigit() for c in w) or w[0].isupper() or any(c in w for c in "+#."):
-            counts[w] += 1
-    # Product names that span two words, e.g. "Dynamics 365", "Power BI".
-    for a, b in re.findall(r"\b([A-Z][a-zA-Z]+) ([A-Z]{2,}|\d{2,4})\b", jd or ""):
+        special = _is_special(w)
+        capital = w[0].isupper()
+        opener = _starts_sentence(text, start)
+        if not (special or capital):
+            prev_name = None
+            continue
+        if opener and not special:
+            # Could still head a name like "Customer Success"; remember it but don't count it alone.
+            prev_name = (w, end)
+            continue
+        key = w.lower()
+        counts[key] += 1
+        first.setdefault(key, w)
+        # Two-word name: previous capitalised word + this one, only when adjacent.
+        if prev_name and text[prev_name[1]:start].strip(" ") == "" and "\n" not in text[prev_name[1]:start]:
+            pair = f"{prev_name[0]} {w}"
+            counts[pair.lower()] += 2
+            first.setdefault(pair.lower(), pair)
+        prev_name = (w, end) if capital and not special else None
+    # Product names like "Dynamics 365" or "Power BI" count even at a sentence start.
+    for a, b in re.findall(r"\b([A-Z][a-zA-Z]+) ([A-Z]{2,}|\d{2,4})\b", text):
         if a not in _STOP:
-            counts[f"{a} {b}"] += 2
-    keywords = [w for w, _ in counts.most_common(limit)]
+            pair = f"{a} {b}"
+            counts[pair.lower()] += 2
+            first.setdefault(pair.lower(), pair)
+    return [first[k] for k, _ in counts.most_common()]
+
+
+def _within_budget(prompt: str) -> bool:
+    try:
+        from mlx_whisper.tokenizer import get_tokenizer
+
+        tok = get_tokenizer(multilingual=False)
+        return len(tok.encode(" " + prompt)) <= MAX_PROMPT_TOKENS
+    except Exception:
+        return len(prompt) <= MAX_PROMPT_CHARS
+
+
+def keyword_prompt(role: str, company: str, jd: str, profile: str = "") -> str:
+    """Seed Whisper with vocabulary from the CV, then the JD (acronyms, product names...).
+
+    Whisper keeps only the last 223 prompt tokens, so the list is capped (about 180 tokens)
+    to avoid pushing out the filler seed at the start.
+    """
+    terms: list[str] = []
+    seen: set[str] = set()
+    for t in extract_terms(profile) + extract_terms(jd):   # CV first
+        if t.lower() not in seen:
+            seen.add(t.lower())
+            terms.append(t)
     # Whisper tends to drop "um"/"uh". Starting the prompt with fillers makes it
     # keep them, so the feedback report can count them.
     head = (
         "Umm, let me think, like, hmm... Okay, so, uh, here's what I did. "
         f"Job interview for {role or 'a role'}" + (f" at {company}" if company else "") + "."
     )
-    prompt = head + (" Topics: " + ", ".join(keywords) + "." if keywords else "")
-    return prompt[:900]
+    chosen: list[str] = []
+    prompt = head
+    for t in terms:
+        cand = head + " Topics: " + ", ".join(chosen + [t]) + "."
+        if not _within_budget(cand):
+            break
+        chosen.append(t)
+        prompt = cand
+    return prompt

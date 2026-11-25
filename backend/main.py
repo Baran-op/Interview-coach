@@ -441,7 +441,7 @@ async def start_session(body: SessionIn):
         options=opts,
         started_at_ms=int(time.time() * 1000),
         voice=opts.get("voice") if opts.get("voice") in tts.VOICES else tts.DEFAULT_VOICE,
-        stt_prompt=stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", "")),
+        stt_prompt=stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", ""), pack.get("profile", "")),
     )
     LIVE[session_id] = live
     await live.lock.acquire()  # released when the stream finishes
