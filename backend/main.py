@@ -38,6 +38,7 @@ from .face import clean_face
 from .segments import clean_segments
 from .brain import (
     OPENING_CUE,
+    current_station,
     time_note,
     BrainError,
     InterviewBrain,
@@ -87,6 +88,19 @@ class LiveSession:
     started_at_ms: int
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_active: float = field(default_factory=time.monotonic)
+    # Stations briefs: the plan ([{key, name, minutes, scenario}]), the station the interviewer last
+    # opened with [station N] (0-based) and when, on the session clock.
+    plan: list[dict] = field(default_factory=list)
+    station: int | None = None
+    station_started_ms: int | None = None
+
+    def current_station(self, now_ms: int) -> tuple[int | None, int | None]:
+        """(running station, when it started or None when inferred) via brain.current_station."""
+        return current_station(self.plan, self.started_at_ms, now_ms, self.station, self.station_started_ms)
+
+    def station_key(self, now_ms: int) -> str | None:
+        i, _ = self.current_station(now_ms)
+        return self.plan[i]["key"] if i is not None else None
 
 
 # Interviews with no activity for this long are ended and scored automatically
@@ -304,6 +318,13 @@ async def speak(
                 return
             parsed, job = item
             is_final = is_final or parsed.is_final
+            if parsed.station is not None and live.plan and 1 <= parsed.station <= len(live.plan):
+                i = parsed.station - 1
+                if live.station != i:
+                    live.station, live.station_started_ms = i, int(time.time() * 1000)
+                st = live.plan[i]
+                yield _line({"type": "station", "index": i, "number": i + 1, "of": len(live.plan), "key": st["key"],
+                             "name": st["name"], "minutes": st["minutes"], "scenario": st["scenario"]})
             if not parsed.text:
                 continue
             audio, tts_error = None, None
@@ -331,7 +352,8 @@ async def speak(
             })
             index += 1
         if full_text:
-            turn_idx = db.add_turn(session_id, "interviewer", full_text, expressions)
+            turn_idx = db.add_turn(session_id, "interviewer", full_text, expressions,
+                                   live.station_key(int(time.time() * 1000)))
         yield _line({
             "type": "done",
             "turn_idx": turn_idx,
@@ -347,7 +369,7 @@ async def speak(
         if not producer.done():
             producer.cancel()
         if full_text and turn_idx is None:  # stream cut short: keep what was said
-            db.add_turn(session_id, "interviewer", full_text, expressions)
+            db.add_turn(session_id, "interviewer", full_text, expressions, live.station_key(int(time.time() * 1000)))
         live.last_active = time.monotonic()
         if live.lock.locked():
             live.lock.release()
@@ -758,8 +780,11 @@ async def pack_history(pack_id: str):
 
 @app.get("/history")
 async def history():
-    """All packs with their finished sessions and score breakdowns."""
-    return db.history()
+    """All packs (with `brief_meta`) with their finished sessions and score breakdowns."""
+    out = db.history()
+    for item in out:
+        item["pack"] = {k: v for k, v in _pack_out(db.get_pack(item["pack"]["id"])).items() if k != "materials"}
+    return out
 
 
 @app.post("/sessions")
@@ -772,15 +797,16 @@ async def start_session(body: SessionIn):
     if not pack:
         raise HTTPException(404, "Pack not found")
 
-    brain = InterviewBrain(build_system_prompt(pack, db.pack_report_history(pack["id"])))
+    record = db.get_brief(pack["id"])
+    snapshot = record["brief"] if record else None
+    brain = InterviewBrain(build_system_prompt(pack, db.pack_report_history(pack["id"]), snapshot))
     try:
         await brain.start()
     except BrainError as exc:
         await brain.close()
         raise HTTPException(502, str(exc))
 
-    record = db.get_brief(pack["id"])
-    session_id = db.create_session(pack["id"], record["brief"] if record else None)
+    session_id = db.create_session(pack["id"], snapshot)
     opts = pack.get("options") or {}
     live = LiveSession(
         brain=brain,
@@ -788,6 +814,8 @@ async def start_session(body: SessionIn):
         started_at_ms=int(time.time() * 1000),
         voice=opts.get("voice") if opts.get("voice") in tts.VOICES else tts.DEFAULT_VOICE,
         stt_prompt=stt.keyword_prompt(pack.get("role") or "", pack.get("company") or "", materials.hint_texts(pack)),
+        plan=[{k: st[k] for k in ("key", "name", "minutes", "scenario")} for st in snapshot["format"]["stations"]]
+        if snapshot and snapshot["format"]["kind"] == "stations" else [],
     )
     LIVE[session_id] = live
     await live.lock.acquire()  # released when the stream finishes
@@ -849,7 +877,8 @@ async def take_turn(session_id: str, request: Request):
         live.lock.release()
         raise
 
-    turn_idx = db.add_turn(session_id, "candidate", answer)
+    now_ms = int(time.time() * 1000)
+    turn_idx = db.add_turn(session_id, "candidate", answer, station=live.station_key(now_ms))
     face = clean_face(face_raw, int(time.time() * 1000) - live.started_at_ms + 2000)
     if face:
         db.set_turn_face(session_id, turn_idx, face)
@@ -858,7 +887,8 @@ async def take_turn(session_id: str, request: Request):
         db.set_turn_segments(session_id, turn_idx, segments)
     if audio_bytes:
         asyncio.create_task(asyncio.to_thread(_save_answer_audio, session_id, turn_idx, audio_bytes))
-    to_claude = time_note(live.options, live.started_at_ms, int(time.time() * 1000)) + answer
+    station, station_started = live.current_station(now_ms)
+    to_claude = time_note(live.options, live.started_at_ms, now_ms, station, live.plan, station_started) + answer
     return StreamingResponse(
         speak(session_id, live, live.brain.stream(to_claude),
               [{"type": "transcript", "text": answer, "stt_ms": stt_ms, "turn_idx": turn_idx}], t0),

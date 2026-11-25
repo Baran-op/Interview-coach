@@ -550,7 +550,7 @@ No new dependencies. No new local models.
       `report_rubric`, `_session_summary` fix, frontend rendering from the report, History and the
       Review delta comparing like criteria only, neutral style for unknown categories. Golden tests
       still pass.
-- [ ] I5. Format from the brief: `{context}` and `{script}` slots, conversation flags, stations
+- [x] I5. Format from the brief: `{context}` and `{script}` slots, conversation flags, stations
       (`[station N]` tag, `turns.station`, per-station time notes, one report entry per station),
       panel, Setup hiding irrelevant options, Interview timer from the brief. Golden tests still pass.
 - [ ] I6. Prep, Drill starters and target lengths from the brief, with today's values as the fallback;

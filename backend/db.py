@@ -122,6 +122,7 @@ _EXTRA_COLUMNS = {
         "face_json": "TEXT",       # per-answer face stats from the browser (numbers only)
         "words_json": "TEXT",      # word offsets in the answer WAV, filled in by the report step
         "segments_json": "TEXT",   # session-clock start/end of each kept speech segment (maps WAV offsets to the recording)
+        "station": "TEXT",         # the station key the turn belongs to (stations briefs only)
     },
 }
 
@@ -238,15 +239,16 @@ def next_turn_idx(session_id: str) -> int:
     return idx
 
 
-def add_turn(session_id: str, speaker: str, text: str, expressions: list | None = None) -> int:
-    """Append a turn and return its index within the session."""
+def add_turn(session_id: str, speaker: str, text: str, expressions: list | None = None,
+             station: str | None = None) -> int:
+    """Append a turn and return its index within the session. `station`: its station key, if any."""
     with connect() as conn:
         (idx,) = conn.execute(
             "SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)
         ).fetchone()
         conn.execute(
-            "INSERT INTO turns (session_id, idx, speaker, text, expressions_json) VALUES (?, ?, ?, ?, ?)",
-            (session_id, idx, speaker, text, json.dumps(expressions) if expressions is not None else None),
+            "INSERT INTO turns (session_id, idx, speaker, text, expressions_json, station) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, idx, speaker, text, json.dumps(expressions) if expressions is not None else None, station),
         )
     return idx
 

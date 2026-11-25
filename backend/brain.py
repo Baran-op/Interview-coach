@@ -30,7 +30,7 @@ from . import materials
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 EXPRESSION_TAGS = ("neutral", "smile", "thinking", "nod", "curious", "serious")
-_TAG_RE = re.compile(r"\[(neutral|smile|thinking|nod|curious|serious|end)\]\s*", re.IGNORECASE)
+_TAG_RE = re.compile(r"\[(neutral|smile|thinking|nod|curious|serious|end|station\s*(\d{1,2}))\]\s*", re.IGNORECASE)
 
 OPENING_CUE = (
     "(The candidate has just joined the video call. Greet them, introduce yourself "
@@ -47,6 +47,7 @@ class ParsedReply:
     text: str                       # clean text, safe to show or speak
     expressions: list[dict] = field(default_factory=list)  # [{tag, char_index}]
     is_final: bool = False          # [END] was present
+    station: int | None = None      # [station N]: the interviewer opened station N (1-based)
 
 
 def parse_tags(raw: str) -> ParsedReply:
@@ -59,6 +60,7 @@ def parse_tags(raw: str) -> ParsedReply:
     out_len = 0
     expressions: list[dict] = []
     is_final = False
+    station = None
     pos = 0
     for m in _TAG_RE.finditer(raw):
         chunk = raw[pos:m.start()]
@@ -70,6 +72,8 @@ def parse_tags(raw: str) -> ParsedReply:
         tag = m.group(1).lower()
         if tag == "end":
             is_final = True
+        elif m.group(2):
+            station = int(m.group(2))
         else:
             expressions.append({"tag": tag, "char_index": out_len})
     tail = raw[pos:]
@@ -79,7 +83,7 @@ def parse_tags(raw: str) -> ParsedReply:
     text = "".join(out).rstrip()
     for e in expressions:
         e["char_index"] = min(e["char_index"], len(text))
-    return ParsedReply(text=text, expressions=expressions, is_final=is_final)
+    return ParsedReply(text=text, expressions=expressions, is_final=is_final, station=station)
 
 
 # --------------------------------------------------------------------------- #
@@ -98,12 +102,53 @@ def length_instruction(opts: dict) -> str:
     return f"Ask {opts.get('num_questions') or 5} main questions."
 
 
-def time_note(opts: dict, started_at_ms: int, now_ms: int) -> str:
-    """Prefix for the candidate's message in timed interviews (not stored in the transcript)."""
+def station_at(plan: list[dict], elapsed_ms: int) -> int:
+    """The station (0-based) the clock says is running: each lasts its `minutes`, the last one runs on."""
+    end = 0
+    for i, st in enumerate(plan):
+        end += st["minutes"] * 60000
+        if elapsed_ms < end:
+            return i
+    return max(0, len(plan) - 1)
+
+
+OVERRUN_MS = 2 * 60000  # a tagged station this far past its time gives way to the clock
+
+
+def current_station(plan: list[dict], started_at_ms: int, now_ms: int, tagged: int | None,
+                    tagged_at_ms: int | None) -> tuple[int | None, int | None]:
+    """(running station, its start or None when inferred). The interviewer's last [station N] tag wins,
+    unless it has overrun its time by 2+ minutes and the clock says a later station is due (a missed tag)."""
+    if not plan:
+        return None, None
+    inferred = station_at(plan, now_ms - started_at_ms)
+    if tagged is None or tagged_at_ms is None:
+        return inferred, None
+    overran = now_ms - tagged_at_ms > plan[tagged]["minutes"] * 60000 + OVERRUN_MS
+    return (inferred, None) if overran and inferred > tagged else (tagged, tagged_at_ms)
+
+
+def time_note(opts: dict, started_at_ms: int, now_ms: int, station: int | None = None,
+              plan: list[dict] | None = None, station_started_ms: int | None = None) -> str:
+    """Prefix for the candidate's message in timed interviews (not stored in the transcript).
+
+    With a stations `plan` ([{minutes}]): "(Time: station 2 of 3, 7 of 8 min used; 18 of 30 min overall.) ".
+    `station` (0-based) comes from the interviewer's last [station N] tag, started at `station_started_ms`;
+    without a tag the station is inferred from the clock.
+    """
+    elapsed = max(0, now_ms - started_at_ms)
+    if plan:
+        total = sum(st["minutes"] for st in plan)
+        if station is None or not 0 <= station < len(plan) or station_started_ms is None:
+            station = station_at(plan, elapsed)
+            station_started_ms = started_at_ms + sum(st["minutes"] for st in plan[:station]) * 60000
+        used = max(0, round((now_ms - station_started_ms) / 60000))
+        return (f"(Time: station {station + 1} of {len(plan)}, {used} of {plan[station]['minutes']} min used; "
+                f"{round(elapsed / 60000)} of {total} min overall.) ")
     minutes = opts.get("minutes")
     if not minutes:
         return ""
-    used = max(0, round((now_ms - started_at_ms) / 60000))
+    used = max(0, round(elapsed / 60000))
     return f"(Time: {used} of {minutes} min used.) "
 
 
@@ -167,29 +212,131 @@ def history_block(history: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
-def build_system_prompt(pack: dict, history: list[dict] | None = None) -> str:
+_SLOT_RE = re.compile(r"\{([a-z_]+)\}")
+
+
+def _fill(template: str, values: dict) -> str:
+    """Substitute {name} slots in one pass (str.format would choke on braces inside a pasted JD, and a
+    value is never scanned again for slots)."""
+    return _SLOT_RE.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), template)
+
+
+DEFAULT_CATEGORY_LIST = (
+    "The report files each main question under one category: intro, motivation, behavioural, technical, case, "
+    "roleplay (you play a client or stakeholder), logistics (notice period, salary, availability) or other. "
+    "Keep each question clearly within one of them.")
+DEFAULT_PROBE_RULE = (
+    "Before you start, silently note what a sceptical hiring manager would probe when comparing this CV with this "
+    "job: career or industry switches, short tenures or gaps, requirements the CV does not show, and claims without "
+    "numbers. Ask about at least two of them during the main questions, politely but directly (for example, \"I see "
+    "you moved from retail into software, what drove that?\"). Never read the list out.")
+CANDIDATE_QUESTIONS_STEP = (
+    "4. Candidate questions. When the main questions are done, thank them and ask whether they have any questions "
+    "for you. Answer briefly and realistically, using the {notes}, and do not make up specific facts such as salary "
+    "or team size.\n")
+
+
+def _category_list(brief: dict | None) -> str:
+    if brief is None:
+        return DEFAULT_CATEGORY_LIST
+    parts = [f"{c['key']} ({c['description']})" if c["description"] else c["key"] for c in brief["categories"]]
+    return ("The report files each main question under one category: " + ", ".join(parts[:-1]) + " or " + parts[-1]
+            + ". Keep each question clearly within one of them.")
+
+
+def _probe_rule(brief: dict | None) -> str:
+    if not brief or not brief["probes"]:
+        return DEFAULT_PROBE_RULE
+    return ("These are the points a sceptical interviewer would probe for this candidate: " + "; ".join(brief["probes"])
+            + ". Ask about at least two of them during the main questions, politely but directly. Never read the list out.")
+
+
+def _panel_block(brief: dict | None) -> str:
+    panel = (brief or {}).get("format", {}).get("panel") or []
+    if not panel:
+        return ""
+    members = "; ".join(f"{p['name']}" + (f", {p['role']}" if p["role"] else "") + (f" (leads on {p['focus']})" if p["focus"] else "")
+                        for p in panel)
+    return ("\n\nThis is a panel interview. The panel: " + members + ". You speak for every member, in one voice. In the "
+            "opening, introduce the panel by name and role. In the main questions, each member leads the questions in "
+            "their own focus area: hand over in speech when the speaker changes and start with their name (for example, "
+            f"\"{panel[1]['name']} here, on {panel[1]['focus'] or 'my area'}...\"). Keep it clear who is asking, and keep "
+            "one question at a time.")
+
+
+def conversation_script(opts: dict, brief: dict | None, company: str) -> str:
+    """Today's five steps (the default brief renders them word for word), adjusted by a brief's flags."""
+    f = (brief or {}).get("format") or {"opening": True, "candidate_questions": True}
+    asks = f["candidate_questions"]
+    values = {
+        "type": opts.get("interview_type") or "mixed",
+        "difficulty": opts.get("difficulty") or "medium",
+        "length": length_instruction(opts),
+        "stage": stage_block(opts),
+        "company": company,
+        "opening": ' Then ask your first question: "Tell me about yourself."' if f["opening"] else "",
+        "motivation_lead": "After their answer, ask" if f["opening"] else "As your first question, ask",
+        "category_list": _category_list(brief),
+        "probe_rule": _probe_rule(brief),
+        "candidate_questions": CANDIDATE_QUESTIONS_STEP.replace(
+            "{notes}", "company notes" if brief is None else "facts about the organisation") if asks else "",
+        "close_n": 5 if asks else 4,
+        "panel": _panel_block(brief),
+    }
+    return _fill((PROMPTS_DIR / "script_conversation.txt").read_text(encoding="utf-8").rstrip("\n"), values)
+
+
+def stations_script(opts: dict, brief: dict) -> str:
+    f = brief["format"]
+    lines = []
+    for i, st in enumerate(f["stations"], 1):
+        line = f"Station {i}: {st['name']} ({st['minutes']} min, {st['category']})."
+        if st["brief"]:
+            line += f" What it tests and how it runs: {st['brief']}"
+        if st["scenario"]:
+            line += f"\n   Scenario to read out: {st['scenario']}"
+        lines.append(line)
+    asks = f["candidate_questions"]
+    values = {
+        "summary": f["summary"] or "a station-based interview.",
+        "difficulty": opts.get("difficulty") or "medium",
+        "n_stations": len(f["stations"]),
+        "total_minutes": f["total_minutes"],
+        "stations": "\n".join(lines),
+        "candidate_questions": ("4. Candidate questions. After the last station, ask whether they have any questions for "
+                                "you. Answer briefly and realistically using the facts about the organisation, and do not "
+                                "make up specific facts.\n") if asks else "",
+        "close_n": 5 if asks else 4,
+    }
+    return _fill((PROMPTS_DIR / "script_stations.txt").read_text(encoding="utf-8").rstrip("\n"), values)
+
+
+def build_system_prompt(pack: dict, history: list[dict] | None = None, brief: dict | None = None) -> str:
+    """The interviewer's system prompt. `brief` is the session's brief; None is the default brief, which
+    renders today's prompt exactly (raw JD / CV / notes and the standard conversation)."""
+    from .brief import legacy_context, render_context
+
     opts = pack.get("options") or {}
-    template = (PROMPTS_DIR / "interviewer.txt").read_text(encoding="utf-8")
-    slots = materials.legacy_slots(pack)
+    company = pack.get("company") or (brief or {}).get("organisation") or "the company"
+    role = pack.get("role") or (brief or {}).get("role") or "the role"
+    if brief is None:
+        context = legacy_context(materials.legacy_slots(pack), "Company notes", "(none)")
+    else:
+        context = render_context(brief)
+    if brief is not None and brief["format"]["kind"] == "stations":
+        script = stations_script(opts, brief)
+    else:
+        script = conversation_script(opts, brief, company)
     values = {
         "interviewer_name": opts.get("interviewer_name") or "Alex",
         "style": opts.get("style") or "neutral",
-        "company": pack.get("company") or "the company",
-        "role": pack.get("role") or "the role",
-        "jd": slots["jd"] or "(not provided)",
-        "profile": slots["profile"] or "(not provided)",
-        "company_notes": slots["company_notes"] or "(none)",
-        "type": opts.get("interview_type") or "mixed",
-        "stage": stage_block(opts),
+        "company": company,
+        "role": role,
+        "context": context,
         "history": history_block(history),
-        "n": opts.get("num_questions") or 5,
-        "difficulty": opts.get("difficulty") or "medium",
-        "length": length_instruction(opts),
+        "script": script,
     }
-    # str.format would choke on braces inside a pasted JD, so substitute by name.
-    for key, val in values.items():
-        template = template.replace("{" + key + "}", str(val))
-    return template
+    return _fill((PROMPTS_DIR / "interviewer.txt").read_text(encoding="utf-8"), values)
 
 
 # --------------------------------------------------------------------------- #

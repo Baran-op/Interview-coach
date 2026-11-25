@@ -76,6 +76,8 @@ def _transcript(turns: list[dict]) -> str:
         secs = ""
         if t["speaker"] == "candidate" and t.get("t_start_ms") is not None and t.get("t_end_ms") is not None:
             secs = f", {round((t['t_end_ms'] - t['t_start_ms']) / 1000)} s"
+        if t.get("station"):
+            secs += f", station {t['station']}"
         lines.append(f"[#{t['idx']} {who}{secs}] {t['text']}")
     return "\n".join(lines)
 

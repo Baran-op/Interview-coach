@@ -71,6 +71,8 @@ function isTyping(target: EventTarget | null) {
 
 export default function Interview({ pack, onExit, onReview }: Props) {
   const interviewer = pack.options.interviewer_name || 'Interviewer'
+  // A stations brief sets the length; otherwise the pack's own minutes (or none: untimed).
+  const totalMinutes = pack.brief_meta?.exists && pack.brief_meta.kind === 'stations' ? pack.brief_meta.total_minutes : pack.options.minutes
 
   const [phase, setPhaseState] = useState<Phase>('starting')
   const [paused, setPaused] = useState(false)
@@ -655,9 +657,9 @@ export default function Interview({ pack, onExit, onReview }: Props) {
             <span className="rec-dot" /> REC
           </span>
         )}
-        <span className={`timer ${pack.options.minutes && elapsed > pack.options.minutes * 60000 ? 'over' : ''}`}>
+        <span className={`timer ${totalMinutes && elapsed > totalMinutes * 60000 ? 'over' : ''}`}>
           {formatTime(elapsed)}
-          {pack.options.minutes ? ` / ${pack.options.minutes}:00` : ''}
+          {totalMinutes ? ` / ${totalMinutes}:00` : ''}
         </span>
         {live ? (
           <button className="danger" onClick={() => setConfirmEnd(true)} disabled={!sessionRef.current || confirmEnd}>

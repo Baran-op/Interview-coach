@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, MAX_PACK_CHARS, type Material, type Pack, type PackInput, type SessionListItem } from '../api'
+import { api, MAX_PACK_CHARS, type BriefMeta, type Material, type Pack, type PackInput, type SessionListItem } from '../api'
 import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
 import { faceModelAvailable, getFaceTracking, setFaceTracking } from '../face/FaceTracker'
 
@@ -93,6 +93,7 @@ export default function Setup({ onStart, editPackId }: Props) {
   const [form, setForm] = useState<Form>(EMPTY)
   const [rows, setRows] = useState<MaterialRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [meta, setMeta] = useState<BriefMeta | null>(null) // the edited pack's brief, if any
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [voices, setVoices] = useState<string[]>(['af_heart'])
@@ -133,6 +134,7 @@ export default function Setup({ onStart, editPackId }: Props) {
 
   const editPack = (p: Pack) => {
     setEditingId(p.id)
+    setMeta(p.brief_meta ?? null)
     setForm({ title: p.title, role: p.role, company: p.company, options: { ...EMPTY.options, ...p.options } })
     setRows(toRows(p.materials ?? []))
     window.scrollTo({ top: 0 })
@@ -141,6 +143,7 @@ export default function Setup({ onStart, editPackId }: Props) {
 
   const stopEditing = () => {
     setEditingId(null)
+    setMeta(null)
     setForm(EMPTY)
     setRows((r) => r.filter((m) => m.kind === 'candidate').map((m) => ({ ...m, key: newKey(), synthetic: false })))
     if (window.location.hash.startsWith('#/edit/')) window.history.replaceState(null, '', '#/')
@@ -173,13 +176,20 @@ export default function Setup({ onStart, editPackId }: Props) {
   }
 
   const o = form.options
-  const settingsSummary = [
-    STAGE_OPTIONS.find((s) => s.value === o.stage)?.label,
-    TYPE_OPTIONS.find((t) => t.value === o.interview_type)?.label,
-    o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`,
-    o.difficulty,
-    o.style,
-  ].join(' · ')
+  // A stations brief fixes the format: type, stage and length come from it.
+  const stations = meta?.exists && meta.kind === 'stations' ? meta : null
+  const briefLength = stations ? `${stations.stations.length} stations, ${stations.total_minutes} min (from the brief)` : ''
+  const settingsSummary = (
+    stations
+      ? [briefLength, o.difficulty, o.style]
+      : [
+          STAGE_OPTIONS.find((s) => s.value === o.stage)?.label,
+          TYPE_OPTIONS.find((t) => t.value === o.interview_type)?.label,
+          o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`,
+          o.difficulty,
+          o.style,
+        ]
+  ).join(' · ')
 
   return (
     <div className="setup">
@@ -236,30 +246,41 @@ export default function Setup({ onStart, editPackId }: Props) {
             <Chevron />
           </summary>
           <div className="settings-grid">
-            <div className="field">
-              <span className="field-label">Type</span>
-              <Dropdown ariaLabel="Interview type" value={o.interview_type} options={TYPE_OPTIONS} onChange={(v) => setOpt('interview_type', v)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Stage</span>
-              <Dropdown ariaLabel="Interview stage" value={o.stage} options={STAGE_OPTIONS} onChange={(v) => setOpt('stage', v)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Length</span>
-              <span className="length">
-                <Dropdown
-                  ariaLabel="Length in"
-                  value={o.minutes ? 'minutes' : 'questions'}
-                  options={LENGTH_OPTIONS}
-                  onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
-                />
-                {o.minutes ? (
-                  <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
-                ) : (
-                  <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
-                )}
-              </span>
-            </div>
+            {stations ? (
+              <div className="field wide">
+                <span className="field-label">Format</span>
+                <span>
+                  {briefLength}. <a href={`#/brief/${editingId}`}>Change it in the interview brief</a>
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="field">
+                  <span className="field-label">Type</span>
+                  <Dropdown ariaLabel="Interview type" value={o.interview_type} options={TYPE_OPTIONS} onChange={(v) => setOpt('interview_type', v)} />
+                </div>
+                <div className="field">
+                  <span className="field-label">Stage</span>
+                  <Dropdown ariaLabel="Interview stage" value={o.stage} options={STAGE_OPTIONS} onChange={(v) => setOpt('stage', v)} />
+                </div>
+                <div className="field">
+                  <span className="field-label">Length</span>
+                  <span className="length">
+                    <Dropdown
+                      ariaLabel="Length in"
+                      value={o.minutes ? 'minutes' : 'questions'}
+                      options={LENGTH_OPTIONS}
+                      onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
+                    />
+                    {o.minutes ? (
+                      <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
+                    ) : (
+                      <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+                    )}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="field">
               <span className="field-label">Difficulty</span>
               <Dropdown ariaLabel="Difficulty" value={o.difficulty} options={DIFFICULTY_OPTIONS} onChange={(v) => setOpt('difficulty', v)} />

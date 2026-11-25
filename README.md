@@ -186,6 +186,20 @@ One Claude request reads your materials and writes:
 - What they'll probe (competencies, likely questions, gaps), organisation facts from your materials, and
   a summary and a factual list of your background.
 
+How the format runs:
+
+- **Conversation**: today's interview (opening, motivation, main questions by type, your questions, close).
+  With a brief, the interviewer reads the brief instead of your raw materials, skips "tell me about
+  yourself" or your questions when the brief turns them off, and probes the brief's listed gaps.
+- **Stations**: a welcome, then each station in order. The interviewer opens each one with a hidden
+  `[station N]` tag (never spoken), reads its scenario out (or sets one up), follows up for the station's
+  time, then says time is up and moves on. Each of your answers carries a hidden note such as
+  "(Time: station 2 of 3, 7 of 8 min used; 18 of 30 min overall.)"; if the interviewer forgets a tag the
+  station comes from the clock. The report has one entry per station reached. Setup hides type, stage and
+  length (the brief sets them) and the timer counts to the stations' total.
+- **Panel**: the conversation, with the members introduced at the start and each leading the questions
+  in their focus area, all in the one voice.
+
 Anything Claude guessed rather than read is listed under **To confirm** with a question. Answer it (your
 answers are sent along when you regenerate) or confirm it; the count shows on the pack in Setup. Everything
 is editable and saving is free. When your materials change, the page says so: **Regenerate** (1 request) or
@@ -317,6 +331,8 @@ sentence can play while Claude is still writing the rest:
  "audio_wav_base64":"…","duration_ms":2280,"word_timings":[{"word":"Hi","start_ms":0,"end_ms":228}],"tts_error":null}
 {"type":"done","turn_idx":2,"reply_text":"…","expressions":[…],"is_final":false,"timings":{"first_sentence_ms":1650,"total_ms":2900}}
 {"type":"error","message":"…"}                                instead of done
+{"type":"station","index":1,"number":2,"of":3,"key":"ethics","name":"Ethics","minutes":8,"scenario":"…"}
+                                                              stations briefs: before the sentence that opens a station
 ```
 
 In `sentence` events, `char_index` is relative to that sentence. In `done`, it's relative

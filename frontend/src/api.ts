@@ -180,6 +180,8 @@ export type InterviewEvent =
       timings: { first_sentence_ms: number | null; total_ms: number }
     }
   | { type: 'error'; message: string }
+  /** A stations brief: the interviewer opened station `number` of `of`. */
+  | { type: 'station'; index: number; number: number; of: number; key: string; name: string; minutes: number; scenario: string | null }
 
 export interface TurnTiming {
   turn_idx: number
