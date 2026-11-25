@@ -24,10 +24,9 @@ Local web app for mock interviews: a talking 3D interviewer (Claude-powered) ask
 job description, the user's CV and company notes; the session is recorded and scored afterwards.
 Personal use only, localhost, uses the user's Claude subscription (never an API key). See `SPEC.md`.
 
-Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews).
-Next: the coaching improvements in `PLAN.md`. Work through its build order, one commit per item, and tick the
-item's checkbox in `PLAN.md` in the same commit that builds it. Then the voice and face delivery stats in
-`PLAN-energy.md` (Phase H), the same way (H1-H7 are done: voice, the face tracker, face stats in the report and Review, quotes, and face stats in Drill; H8 is optional).
+Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews),
+plus the coaching improvements and the voice and face delivery stats (Phase H, H1-H8). Their plans (`PLAN.md`,
+`PLAN-energy.md`) are finished and removed; they're in git history. Code comments citing them refer to that history.
 
 ## Stack and layout
 
@@ -40,8 +39,7 @@ item's checkbox in `PLAN.md` in the same commit that builds it. Then the voice a
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`, `src/index.css` (the whole design system).
 - `scripts/` hand-run tools. `python -m scripts.backfill_delivery` recomputes delivery (incl. voice and face) for stored reports and drill attempts from the saved WAVs (no Claude calls, idempotent). `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `python -m scripts.voice_stats` prints voice stats for every saved answer WAV (calibration, H2); `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
-- `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist;
-  `PLAN-energy.md` the energy and presence plan (voice pitch/loudness/trail-off, then webcam eye contact and expressiveness, all local).
+- `SPEC.md` the original spec and milestones.
 
 ## Commands
 
@@ -59,7 +57,7 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
 - `prompts/interviewer.txt` scripts the whole interview (its `{stage}` block comes from `STAGES` in `brain.py`: screen/full/final, old packs default to full): intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list), and keep the criteria and anchors in `prompts/drill.txt` identical to `feedback.txt` (a test checks this).
 - Session history: `db.pack_report_history` feeds `brain.history_block` (`{history}` in `interviewer.txt`); `feedback._system_prompt` gets the previous session's fixes (`{previous_fixes}`) and the report carries `previous_fixes` statuses. Keep the two prompt files in step.
-- Face tracking (Phase H in `PLAN-energy.md`): numbers only, never send or store video frames, never label emotions in UI text. Off when the model is missing, the Setup toggle (`localStorage.faceTracking`) is off, or there is no camera in the recording. Drill opens its own camera (self-view) only when the toggle is on and the model exists, and stops it on leaving the page.
+- Face tracking (Phase H): numbers only, never send or store video frames, never label emotions in UI text. Off when the model is missing, the Setup toggle (`localStorage.faceTracking`) is off, or there is no camera in the recording. Drill opens its own camera (self-view) only when the toggle is on and the model exists, and stops it on leaving the page.
 - Keep all avatar interaction going through `AvatarController.say()`.
 - UI is monochrome: colours are CSS tokens on `:root` in `index.css` (light + dark via `prefers-color-scheme`);
   red (`--danger`) is reserved for recording and errors, and the per-type History chart keeps its categorical colours.
