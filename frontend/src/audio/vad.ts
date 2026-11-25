@@ -25,16 +25,19 @@ export class TurnListener {
   private vad: MicVAD | null = null
   private segments: Float32Array[] = []
   private held = false
+  private spaceHeld = false
   private collecting = false // finish()/suspend() in progress: just collect segments
   private _listening = false
   private _speaking = false
 
   private cb: TurnCallbacks
   private silenceMs: number
+  private manual: boolean // Done-only mode: silences never end the turn
 
   constructor(cb: TurnCallbacks, silenceMs = 2000) {
     this.cb = cb
-    this.silenceMs = silenceMs
+    this.manual = silenceMs === 0
+    this.silenceMs = silenceMs || 2000 // still used by the VAD for segmenting
   }
 
   get listening() {
@@ -84,16 +87,21 @@ export class TurnListener {
     })
   }
 
+  /** 0 = Done-only mode (the turn ends only via finish()). */
   setSilenceMs(ms: number) {
-    this.silenceMs = ms
-    this.vad?.setOptions({ redemptionMs: ms })
+    this.manual = ms === 0
+    if (this.manual) this.held = true
+    else if (this._listening && !this.spaceHeld) this.held = false
+    this.silenceMs = ms || 2000
+    this.vad?.setOptions({ redemptionMs: this.silenceMs })
   }
 
   /** Start listening for a new answer. */
   async listen(): Promise<void> {
     if (!this.vad) throw new Error('VAD not initialised')
     this.segments = []
-    this.held = false
+    this.held = this.manual
+    this.spaceHeld = false
     this._listening = true
     await this.startVad()
   }
@@ -118,13 +126,15 @@ export class TurnListener {
 
   /** Spacebar push-to-talk: while held, pauses don't end the turn. */
   hold(on: boolean) {
-    this.held = on
+    this.spaceHeld = on
+    this.held = on || this.manual
   }
 
   /** End the answer now (Done button / push-to-talk released). */
   async finish(): Promise<void> {
     if (!this.vad || this.collecting) return
-    this.held = false
+    this.held = this.manual
+    this.spaceHeld = false
     this.collecting = true
     this._listening = false
     await this.pauseVad() // submits any speech in progress via onSpeechEnd

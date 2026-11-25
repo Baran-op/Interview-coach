@@ -85,7 +85,7 @@ still bleed into your answer.
    pre-filled from the latest pack.
 3. The interviewer greets you and asks the first question. When the dot turns blue it's
    your turn: answer out loud. Your turn ends when:
-   - you stay silent for 2 s (adjustable: 1.5-3 s), or
+   - you stay silent for 2 s (adjustable: 1.5-5 s, or "only when I press Done"), or
    - you press **Done**, or
    - you **hold Space** while talking (pauses don't end the turn) and release it to send.
 4. **Pause** freezes the interviewer or your answer (what you said so far is kept).

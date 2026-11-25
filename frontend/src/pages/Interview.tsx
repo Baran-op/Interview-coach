@@ -39,11 +39,13 @@ interface Span {
   end: number
 }
 
-const SILENCE_OPTIONS = [1500, 2000, 2500, 3000]
+const SILENCE_OPTIONS = [1500, 2000, 2500, 3000, 4000, 5000, 0] // 0 = only when I press Done
 
 function readSilence(): number {
   try {
-    const v = Number(localStorage.getItem('silenceMs'))
+    const raw = localStorage.getItem('silenceMs')
+    if (raw === null) return 2000 // Number(null) is 0, which would switch Done-only on
+    const v = Number(raw)
     return SILENCE_OPTIONS.includes(v) ? v : 2000
   } catch {
     return 2000
@@ -660,15 +662,15 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           </div>
           {voiceMode && (
             <div className="muted small hint">
-              Your turn ends after{' '}
+              Your turn ends{silenceMs ? ' after ' : ' '}
               <select value={silenceMs} onChange={(e) => changeSilence(Number(e.target.value))}>
                 {SILENCE_OPTIONS.map((ms) => (
                   <option key={ms} value={ms}>
-                    {ms / 1000} s
+                    {ms ? `${ms / 1000} s` : 'only when I press Done'}
                   </option>
                 ))}
               </select>{' '}
-              of silence, or press Done. Hold Space to keep talking through pauses.
+              {silenceMs ? 'of silence, or press Done. Hold Space to keep talking through pauses.' : '(pauses never end it).'}
             </div>
           )}
           {latency && (
