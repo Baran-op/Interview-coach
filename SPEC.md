@@ -143,6 +143,28 @@ The backend strips tags from the text before TTS and returns them with the chara
 - Store a timestamp for the start of each question so Review can show markers.
 - Option: record the avatar canvas instead of the webcam (`canvas.captureStream()`), or both side by side.
 
+### Interview brief (Phase I)
+
+So the app works for any profession, a pack's materials are turned into an **interview brief** by one
+Claude request (`backend/brief.py`, `prompts/brief.txt`), which I review and edit on the Brief page.
+Everything downstream reads the brief, never the raw materials:
+
+- **Format kinds**: `conversation` (one interviewer: opening, motivation, main questions, my questions,
+  close; the opening and my questions can be turned off), `stations` (1-8 timed stations in order, each
+  with minutes, a category, a brief and an optional scenario read out; the interviewer tags each with
+  `[station N]` and my answers carry per-station time notes) and `panel` (2-4 named members, one voice).
+- **Criteria**: 3-6, each scored 1-5 with 1/3/5 anchors, from my mark scheme (with how its scale maps
+  onto 1-5) or the standard four word for word. **Categories**: 2-10 question types with an answer shape,
+  an optional scoring rule and a target answer length; `other` is always there.
+- Plus competencies, likely questions, probes, organisation facts, a candidate summary (for the
+  interviewer) and candidate facts (for scoring, prep and model answers), and the **assumptions** Claude
+  made, each with a question I can answer before regenerating.
+- **No brief = the standard interview, byte for byte**: `default_brief(pack)` reproduces the prompts as
+  they were, and golden tests (`backend/tests/golden/`) prove it.
+- **Stable scoring**: each session snapshots its brief; each report and drill attempt stores the criteria
+  and categories it was scored with; once a pack has a scored session its rubric is frozen and changing
+  it starts History comparisons fresh (only sessions with the same criteria are compared).
+
 ### Storage
 
 ```
@@ -205,6 +227,10 @@ Build in this order; each milestone is usable on its own, and the avatar comes l
    - Done when: the face lip-syncs to every reply, changes expression on tags, and idles naturally while I talk.
 5. **Polish** — History, interview packs, difficulty and style options, downloads.
    - Done when: I can re-run a saved pack and compare scores across sessions.
+
+Later phases (plans in git history): coaching improvements, voice and face delivery stats (Phase H), and
+the interview brief (Phase I, `PLAN-brief.md`): materials of any kind in, a reviewed brief out, so any
+profession and interview format works.
 
 ## Performance, risks and rules of use
 

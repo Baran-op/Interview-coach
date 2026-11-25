@@ -27,8 +27,9 @@ Personal use only, localhost, uses the user's Claude subscription (never an API 
 Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews),
 plus the coaching improvements and the voice and face delivery stats (Phase H, H1-H8). Their plans (`PLAN.md`,
 `PLAN-energy.md`) are finished and removed; they're in git history. Code comments citing them refer to that history.
-Next: Phase I in `PLAN-brief.md` (materials in, interview brief out, so any profession works). Work through its
-build order, one commit per item, ticking the item's checkbox in the same commit.
+Phase I in `PLAN-brief.md` (materials in, interview brief out, so any profession works) is built: I0-I6 and I8,
+plus I7's docs. I7's end-to-end check with two fictional packs (about 26 Claude requests) waits for the user's
+approval; tick I7 once it has run.
 
 ## Stack and layout
 
