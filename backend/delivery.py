@@ -160,22 +160,57 @@ def _f0(frame: np.ndarray, rate: int) -> float | None:
     return rate / (t + float(np.clip(shift, -1, 1)))
 
 
-def _pitch_range_st(x: np.ndarray, rate: int, voiced: np.ndarray) -> float | None:
+def _f0_track(x: np.ndarray, rate: int, voiced: np.ndarray) -> np.ndarray:
+    """f0 in Hz per 30 ms frame: NaN where the frame is unvoiced, too close to the end, or not clearly periodic."""
     n = int(rate * FRAME_S)
     lag = int(rate / _F0_MIN)
-    f0s = []
+    f0 = np.full(len(voiced), np.nan)
     for i in np.flatnonzero(voiced):
         seg = x[i * n : i * n + n + lag]
         if len(seg) < n + lag:
             continue
         f = _f0(seg, rate)
         if f:
-            f0s.append(f)
-    if len(f0s) < 10:
+            f0[i] = f
+    return f0
+
+
+def pitch_track(x, rate: int) -> dict | None:
+    """Per-frame pitch of mono float samples (PLAN-voice.md, V1): the loop ``voice_stats`` always ran, exposed.
+
+    ``{"frame_ms": 30, "f0_hz": float array (NaN where unpitched), "voiced": bool array (the RMS mask, before
+    bridging), "rms_db": float array}``, one entry per 30 ms frame; None when the clip is shorter than a frame.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    vf = voiced_frames(x, rate)
+    if vf is None:
         return None
-    st = 12 * np.log2(np.array(f0s) / float(np.median(f0s)))
-    st = np.where(st > 9, st - 12, np.where(st < -9, st + 12, st))  # octave errors fold back
-    st = st[np.abs(st) <= 12]
+    rms, voiced = vf
+    return {
+        "frame_ms": int(FRAME_S * 1000),
+        "f0_hz": _f0_track(x, rate, voiced),
+        "voiced": voiced,
+        "rms_db": 20 * np.log10(np.maximum(rms, 1e-6)),
+    }
+
+
+def to_semitones(f0_hz, center_hz: float) -> np.ndarray:
+    """``12 * log2(f0 / center)``, with octave errors folded back (over +9 st: minus 12, under -9: plus 12)
+    and anything still beyond +-12 st (and every NaN) left as NaN."""
+    f0 = np.asarray(f0_hz, dtype=np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        st = 12 * np.log2(f0 / center_hz)
+    st = np.where(st > 9, st - 12, np.where(st < -9, st + 12, st))
+    return np.where(np.abs(st) <= 12, st, np.nan)
+
+
+def _pitch_range_st(x: np.ndarray, rate: int, voiced: np.ndarray) -> float | None:
+    f0 = _f0_track(x, rate, voiced)
+    f0 = f0[~np.isnan(f0)]
+    if len(f0) < 10:
+        return None
+    st = to_semitones(f0, float(np.median(f0)))
+    st = st[~np.isnan(st)]
     if len(st) < 10:
         return None
     return float(np.percentile(st, 90) - np.percentile(st, 10))
