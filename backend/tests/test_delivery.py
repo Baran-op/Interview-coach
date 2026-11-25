@@ -270,3 +270,15 @@ def test_moment_quote_joins_turns_and_add_quotes():
     fd = {"face": {"moments": [{"kind": "down", "start_ms": 3500, "end_ms": 7000}, {"kind": "away", "start_ms": 20000, "end_ms": 26000}]}}
     delivery.add_quotes(fd, [a, b])
     assert fd["face"]["moments"][0]["quote"] == "there again" and "quote" not in fd["face"]["moments"][1]
+
+
+def test_session_delivery_medians_and_dashes():
+    ans = [
+        {"delivery": {"voice": {"pitch_range_st": 4.0, "trail_off_pct": 0}, "face": {"on_screen_pct": 80}}},
+        {"delivery": {"voice": {"pitch_range_st": 6.0, "trail_off_pct": 50}, "face": None}},
+        {"delivery": {"voice": None, "face": {"on_screen_pct": 60}}},
+        {},
+    ]
+    assert delivery.session_delivery(ans) == {"pitch_range_st": 5.0, "trail_off_pct": 25.0, "on_screen_pct": 70.0}
+    assert delivery.session_delivery([{}]) == {"pitch_range_st": None, "trail_off_pct": None, "on_screen_pct": None}
+    assert delivery.session_delivery([]) is None

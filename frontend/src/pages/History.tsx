@@ -180,6 +180,7 @@ export default function History({ onStart }: Props) {
                 </div>
                 {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} />}
                 <TypeTable sessions={scored} />
+                <DeliveryTable sessions={scored} />
                 <details className="disclosure plain" open>
                   <summary>
                     <h3>Sessions</h3>
@@ -250,6 +251,50 @@ export default function History({ onStart }: Props) {
         )
       })}
     </div>
+  )
+}
+
+/** Median pitch range, trailing-off share and eye contact per counted session; a dash where there is no data. */
+function DeliveryTable({ sessions }: { sessions: HistorySession[] }) {
+  if (!sessions.some((s) => s.delivery_trend && Object.values(s.delivery_trend).some((v) => v != null))) return null
+  const cell = (v: number | null | undefined, unit: string, nd = 1) => (v != null ? `${v.toFixed(nd)}${unit}` : '–')
+  return (
+    <details className="disclosure plain">
+      <summary>
+        <h3>Delivery over time</h3>
+        <span className="summary-meta muted small">median per session</span>
+        <Chevron />
+      </summary>
+      <div className="table-wrap">
+        <table className="sessions">
+          <caption className="sr-only">Delivery over time</caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col" className="num">
+                Pitch range
+              </th>
+              <th scope="col" className="num">
+                Trailing off
+              </th>
+              <th scope="col" className="num">
+                Eye contact
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...sessions].reverse().map((s) => (
+              <tr key={s.id}>
+                <td>{fmtDateTime(s.started_at)}</td>
+                <td className="num">{cell(s.delivery_trend?.pitch_range_st, ' st')}</td>
+                <td className="num">{cell(s.delivery_trend?.trail_off_pct, '%', 0)}</td>
+                <td className="num">{cell(s.delivery_trend?.on_screen_pct, '%', 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 

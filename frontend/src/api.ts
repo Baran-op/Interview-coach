@@ -258,6 +258,7 @@ export interface HistorySession {
   answers: number | null
   partial: boolean
   by_category: Record<string, { average: number; answers: number }>
+  delivery_trend: { pitch_range_st: number | null; trail_off_pct: number | null; on_screen_pct: number | null } | null
 }
 
 export interface PackHistory {

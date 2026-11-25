@@ -174,6 +174,8 @@ minute.
   - a "By question type" table (type, answers, first, latest and best score; partial sessions
     left out). Each scored answer carries a category (intro, motivation, behavioural, technical,
     case, role-play, logistics, other) and a competency, shown as a chip on the Review page;
+  - a collapsed "Delivery over time" table (median pitch range, trailing-off share and eye contact per session;
+    partial sessions left out, a dash where a session has no voice or face data);
   - a table of every session: overall score, the four criteria, filler words and average
     answer length.
 

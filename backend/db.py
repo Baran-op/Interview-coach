@@ -530,6 +530,7 @@ def _session_summary(row: sqlite3.Row) -> dict:
     d["answers"] = None
     d["partial"] = False
     d["by_category"] = {}
+    d["delivery_trend"] = None
     if report and report.get("answers"):
         answers = report["answers"]
         d["criteria"] = {
@@ -540,6 +541,9 @@ def _session_summary(row: sqlite3.Row) -> dict:
         d["answers"] = len(answers)
         d["partial"] = is_partial(len(answers))
         d["by_category"] = category_averages(answers)
+        from .delivery import session_delivery  # late: delivery imports feedback, which imports db
+
+        d["delivery_trend"] = session_delivery(answers)
     return d
 
 

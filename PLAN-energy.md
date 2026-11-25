@@ -304,7 +304,7 @@ dependency.
 - [x] H5. 2b Face stats in the report and Review, with timed moments on the recording (built; needs real camera data to verify, see "H5 still to verify")
 - [x] H6. 2c What you were saying at each moment (word timestamps, VAD segments) (built; the quotes need a real webcam session to check, see "H6 still to verify")
 - [x] H7. 2d Face stats in Drill (built; camera and quotes need a real webcam session to check, see "H7 still to verify")
-- [ ] H8. 3 Delivery trends in History (optional)
+- [x] H8. 3 Delivery trends in History (optional)
 
 ## Calibration results
 

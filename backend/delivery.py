@@ -446,6 +446,31 @@ def face_fields(face: dict | None, baseline: dict | None) -> dict:
     }
 
 
+def session_delivery(answers: list[dict] | None) -> dict | None:
+    """One session's delivery trend numbers from its report answers (for History).
+
+    ``pitch_range_st``, ``trail_off_pct`` and ``on_screen_pct`` are medians over the answers that have
+    the stat; each is None when no answer has it. None when there are no answers. Behaviour only.
+    """
+    if not answers:
+        return None
+
+    def med(group: str, key: str) -> float | None:
+        vals = []
+        for a in answers:
+            src = (a.get("delivery") or {}).get(group)
+            v = src.get(key) if isinstance(src, dict) else None
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                vals.append(v)
+        return round(float(np.median(vals)), 1) if vals else None
+
+    return {
+        "pitch_range_st": med("voice", "pitch_range_st"),
+        "trail_off_pct": med("voice", "trail_off_pct"),
+        "on_screen_pct": med("face", "on_screen_pct"),
+    }
+
+
 def _turn_seconds(t: dict) -> float:
     a, b = t.get("t_start_ms"), t.get("t_end_ms")
     if a is not None and b is not None and b > a:
