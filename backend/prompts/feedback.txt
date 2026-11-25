@@ -19,7 +19,7 @@ How to score:
 {category_notes}- "better_answer": a stronger version of the answer, written in the first person as the candidate would say it out loud, 120 to 200 words, in STAR shape where it fits. Use only facts from the transcript or the CV. Never invent achievements or numbers: where a detail is missing, write a placeholder in square brackets, such as [team size] or [% improvement].
 - "category": {category_sentence}.
 - "competency": the skill the question tests, in 2 to 4 words, such as "stakeholder management". Reuse the same wording for the same skill.
-- "tips": 2 or 3 short, concrete tips for that answer.
+{voice_rules}- "tips": 2 or 3 short, concrete tips for that answer.
 - "top_fixes": exactly 3 of the most important things to change across the whole interview, most important first, each one actionable in a single sentence.
 - "previous_fixes": one entry per fix listed above (at most 3; an empty list if the fixes are "none"). "fix" repeats the fix, "status" is improved (clearly better this time), partly (some progress, still a gap), not_yet (no change or worse) or not_tested (this interview gave no chance to show it), and "evidence" is one sentence citing the turn, such as "#7: gave a result with a number".
 - "summary": 2 to 4 sentences on how the interview went overall, written to the candidate ("you").

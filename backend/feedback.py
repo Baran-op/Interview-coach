@@ -69,7 +69,11 @@ def answer_seconds(turns: list[dict]) -> float | None:
 
 # ------------------------------------------------------------- the request --- #
 
-def _transcript(turns: list[dict]) -> str:
+def _transcript(turns: list[dict], evidence: dict | None = None) -> str:
+    """The transcript sent to Claude. With ``evidence`` (``voice.turn_evidence``), a candidate turn that has a
+    flat stretch gets one indented line under it; with None (or no stretches) the text is today's exactly."""
+    from . import voice
+
     lines = []
     for t in turns:
         who = "Interviewer" if t["speaker"] == "interviewer" else "Candidate"
@@ -79,6 +83,8 @@ def _transcript(turns: list[dict]) -> str:
         if t.get("station"):
             secs += f", station {t['station']}"
         lines.append(f"[#{t['idx']} {who}{secs}] {t['text']}")
+        if t["speaker"] == "candidate" and (extra := voice.evidence_line(t["idx"], evidence)):
+            lines.append(extra)
     return "\n".join(lines)
 
 
@@ -91,9 +97,13 @@ def previous_fixes_text(fixes: list[str] | None) -> str:
     return "\n".join(f"{i}. {f}" for i, f in enumerate(fixes, 1))
 
 
-def _system_prompt(pack: dict, previous_fixes: list[str] | None = None, brief: dict | None = None) -> str:
+def _system_prompt(pack: dict, previous_fixes: list[str] | None = None, brief: dict | None = None,
+                   evidence: dict | None = None) -> str:
     """The report prompt. `brief` is the session's brief snapshot; None is the default brief, which
-    renders today's prompt exactly (raw JD / CV / notes and the standard rubric)."""
+    renders today's prompt exactly (raw JD / CV / notes and the standard rubric). `evidence` (voice,
+    ``voice.turn_evidence``) adds the voice rules only when a flat stretch is listed; otherwise the slot is empty."""
+    from . import voice
+
     opts = pack.get("options") or {}
     context = (brief_mod.legacy_context(materials.legacy_slots(pack)) if brief is None
                else brief_mod.scoring_context(brief))
@@ -105,6 +115,7 @@ def _system_prompt(pack: dict, previous_fixes: list[str] | None = None, brief: d
         "difficulty": opts.get("difficulty") or "medium",
         "context": context,
         "previous_fixes": previous_fixes_text(previous_fixes),
+        "voice_rules": voice.rules_text(evidence),
         **brief_mod.scoring_values(brief),
     }
     text = (PROMPTS_DIR / "feedback.txt").read_text(encoding="utf-8")
@@ -114,8 +125,24 @@ def _system_prompt(pack: dict, previous_fixes: list[str] | None = None, brief: d
 
 
 
-def report_schema(brief: dict | None = None) -> dict:
-    """The report's JSON schema for a brief's criteria and categories (None: the default brief, today's schema)."""
+VOICE_ADVICE_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "section": {"type": "string"},
+            "stress": {"type": "array", "items": {"type": "string"}},
+            "say_it": {"type": "string"},
+            "why": {"type": "string"},
+        },
+        "required": ["section", "stress", "say_it", "why"],
+    },
+}
+
+
+def report_schema(brief: dict | None = None, voice: bool = False) -> dict:
+    """The report's JSON schema for a brief's criteria and categories (None: the default brief, today's schema).
+    ``voice=True`` adds an optional ``voice_advice`` list to each answer (PLAN-voice.md, V6)."""
     criteria, categories = brief_mod.criteria_keys(brief), brief_mod.category_keys(brief)
     answer = {
         "type": "object",
@@ -135,6 +162,8 @@ def report_schema(brief: dict | None = None) -> dict:
         },
         "required": ["question_turn", "question", "answer_summary", "scores", "better_answer", "tips"],
     }
+    if voice:
+        answer["properties"]["voice_advice"] = VOICE_ADVICE_SCHEMA
     if brief and brief["format"]["kind"] == "stations":
         answer["properties"]["station"] = {"type": "string", "enum": [st["key"] for st in brief["format"]["stations"]]}
     return _report_schema(answer)
@@ -185,11 +214,15 @@ def _score(v) -> int:
         return 1
 
 
-def normalise(raw: dict, turns: list[dict], brief: dict | None = None) -> dict:
+def normalise(raw: dict, turns: list[dict], brief: dict | None = None, evidence: dict | None = None) -> dict:
     """Coerce Claude's JSON into the report schema and add the local stats.
 
     Scores the brief's criteria and resolves categories against its keys (None: the default brief).
-    The report carries the rubric it was scored with (`criteria`, `criteria_hash`, `categories`)."""
+    The report carries the rubric it was scored with (`criteria`, `criteria_hash`, `categories`).
+    With voice ``evidence``, each answer's ``voice_advice`` is kept only for stretches that belong to its turns
+    and pass ``voice.clean_advice`` (real stress words, no feelings or traits)."""
+    from . import delivery, voice
+
     criteria, allowed = brief_mod.criteria_keys(brief), brief_mod.category_keys(brief)
     stations = {st["key"] for st in (brief or {}).get("format", {}).get("stations") or []}
     answers = []
@@ -212,7 +245,16 @@ def normalise(raw: dict, turns: list[dict], brief: dict | None = None) -> dict:
         }
         if stations and a.get("station") in stations:
             entry["station"] = a["station"]
+        entry["_raw_advice"] = a.get("voice_advice")
         answers.append(entry)
+    for entry in answers:
+        raw_advice = entry.pop("_raw_advice")
+        if not evidence or not raw_advice:
+            continue
+        by_id = {s["id"]: s for t in delivery.answer_turns(entry, answers, turns)
+                 for s in evidence.get(t["idx"], {}).get("sections", []) if s.get("advice_ok")}
+        if advice := voice.clean_advice(raw_advice, by_id):
+            entry["voice_advice"] = advice
     if not answers:
         raise FeedbackError("The report had no scored answers")
     fixes = [str(f) for f in (raw.get("top_fixes") or []) if f][:3]
@@ -257,6 +299,22 @@ def _delivery_line(d: dict) -> str:
     from .delivery import delivery_line
 
     return delivery_line(d)
+
+
+def _voice_sections_md(d: dict | None) -> list[str]:
+    from .delivery import QUOTE_WORDS, _mmss
+
+    out = []
+    for s in ((d or {}).get("voice") or {}).get("sections") or []:
+        words = s.get("words") or []
+        line = f"- Flat {_mmss(s['start_ms'] / 1000)}\u2013{_mmss(s['end_ms'] / 1000)}"
+        if words:
+            line += ", while saying: \u201c" + " ".join(words[:QUOTE_WORDS]) + ("\u2026" if len(words) > QUOTE_WORDS else "") + "\u201d"
+        adv = s.get("advice")
+        if adv:
+            line += f". Stress *{', '.join(adv['stress'])}*: \u201c{adv['say_it']}\u201d"
+        out.append(line)
+    return [*out, ""] if out else []
 
 
 def _face_moments_md(d: dict | None) -> list[str]:
@@ -308,6 +366,7 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
             "",
             *([f"**Delivery:** {_delivery_line(a['delivery'])}", ""] if a.get("delivery") else []),
             *_face_moments_md(a.get("delivery")),
+            *_voice_sections_md(a.get("delivery")),
             *[f"- {t}" for t in a["tips"]],
             "",
             "**A stronger answer:**",
@@ -375,15 +434,19 @@ async def generate(session_id: str) -> None:
         fixes = earlier[0]["top_fixes"] if earlier else []
         brief = session_brief(session)  # the brief the session ran with, so a later edit never re-scores it
         await _fill_words(session_id, turns)  # before the request: the voice evidence quotes these words (V4)
-        raw = await _ask_claude(_system_prompt(pack, fixes, brief), _transcript(turns), report_schema(brief))
-        report = normalise(raw, turns, brief)
+        from . import voice
+
+        evidence = voice.turn_evidence(turns, db.ANSWERS_DIR / session_id, db.voice_baseline(exclude_session=session_id))
+        raw = await _ask_claude(_system_prompt(pack, fixes, brief, evidence), _transcript(turns, evidence),
+                                report_schema(brief, voice=bool(voice.advised_sections(evidence))))
+        report = normalise(raw, turns, brief, evidence)
         from . import delivery  # imported here: delivery imports this module
 
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
                                  db.voice_baseline(exclude_session=session_id),
                                  db.face_baseline(exclude_session=session_id),
                                  targets=brief_mod.targets(report["categories"]),
-                                 no_target=brief_mod.untimed_stations(brief))
+                                 no_target=brief_mod.untimed_stations(brief), evidence=evidence)
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

@@ -546,7 +546,7 @@ def answer_turns(answer: dict, answers: list[dict], turns: list[dict]) -> list[d
 
 def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None,
                     face_baseline: dict | None = None, targets: dict | None = None,
-                    no_target: set | frozenset = frozenset()) -> None:
+                    no_target: set | frozenset = frozenset(), evidence: dict | None = None) -> None:
     """Add a ``delivery`` object to each answer (in place).
 
     An answer covers the candidate turns after its ``question_turn`` and before the next
@@ -556,6 +556,8 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
     ``face_baseline`` is ``db.face_baseline()``; each answer's turns' ``face`` stats are combined into ``delivery.face``.
     ``targets`` ({category: (min, max) seconds}) come from the report's categories; None is ``TARGET_SECONDS``.
     An answer whose ``station`` is in ``no_target`` (a scenario station over 5 minutes) gets no target.
+    ``evidence`` (``voice.turn_evidence``, computed before the report request) puts the flat stretches of the
+    answer's turns, each with its advice, in ``delivery.voice.sections``; without it ``voice`` is unchanged.
     """
     targets = TARGET_SECONDS if targets is None else targets
     starts = sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int))
@@ -581,6 +583,10 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
         voice = None
         if audio_dir is not None:
             voice = voice_from_wavs(Path(audio_dir) / f"{t['idx']}.wav" for t in mine)
+        if voice is not None and evidence is not None:
+            from . import voice as voice_mod
+
+            voice = {**voice, "sections": voice_mod.answer_sections(mine, evidence, a.get("voice_advice"))}
         target = None if a.get("station") in no_target else targets.get(a.get("category"))
         flag = None
         if target:

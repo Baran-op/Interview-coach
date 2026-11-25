@@ -6,7 +6,8 @@ Every report's per-answer ``delivery`` is rebuilt from its transcript and ``data
 every drill attempt with audio gets its voice fields. Spoken turns with a saved WAV but no word
 offsets get them from Whisper (about 5 s per 80 s answer; skipped when mlx-whisper is missing), for the
 quotes under face moments and flat stretches. Face stats (from each turn's stored `face_json`) are
-combined per answer, with flags and moments, in the same passes. Scores and text are left as they are. Runs in two
+combined per answer, with flags and moments, in the same passes. Flat voice stretches (``delivery.voice.sections``, PLAN-voice.md V6)
+are filled from the WAVs and word offsets, never with advice, and stretches that already have advice are left untouched. Scores and text are left as they are. Runs in two
 passes so the voice baseline exists before any flags are set (PLAN-energy.md, 1c).
 """
 
@@ -17,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import brief, db, delivery, feedback, stt  # noqa: E402
+from backend import brief, db, delivery, feedback, stt, voice  # noqa: E402
 
 
 def _reports() -> list[tuple[dict, dict]]:
@@ -46,6 +47,10 @@ def main() -> None:
     db.init()
     reports = _reports()
     attempts = [a for a in db.list_attempts_all() if a.get("audio_path") and a.get("result")]
+    # Flat stretches that already carry advice are kept as they are (the advice refers to them).
+    kept = {(s["id"], a.get("question_turn")): ((a.get("delivery") or {}).get("voice") or {}).get("sections")
+            for s, report in reports for a in report["answers"]
+            if any(x.get("advice") for x in ((a.get("delivery") or {}).get("voice") or {}).get("sections") or [])}
     # Pass 1: stats and voice numbers, no baseline yet.
     for s, report in reports:
         turns = db.list_turns(s["id"])
@@ -66,10 +71,15 @@ def main() -> None:
         base = db.voice_baseline(exclude_session=s["id"])
         face_base = db.face_baseline(exclude_session=s["id"])
         turns = db.list_turns(s["id"])
+        evidence = voice.turn_evidence(turns, db.ANSWERS_DIR / s["id"], base)  # sections and words only, never advice
         for ans in report["answers"]:
             d = ans.get("delivery")
             if d:
                 d.update(delivery.voice_fields(d.get("voice"), base))
+                if d.get("voice"):
+                    old = kept.get((s["id"], ans.get("question_turn")))
+                    d["voice"]["sections"] = old if old else voice.answer_sections(
+                        delivery.answer_turns(ans, report["answers"], turns), evidence, ans.get("voice_advice"))
                 d.update(delivery.add_quotes(delivery.face_fields(d.get("face"), face_base), delivery.answer_turns(ans, report["answers"], turns)))
                 flagged += bool(d["voice_flags"] or d.get("face_flags"))
         pack = db.get_pack(s["pack_id"]) or {}

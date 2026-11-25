@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from backend import brain, drill, feedback, prep
-from backend.tests.golden.fixtures import FIXES, HISTORY, PACKS
+from backend.tests.golden.fixtures import FIXES, HISTORY, PACKS, VOICE_EVIDENCE
 
 GOLDEN_DIR = Path(__file__).parent
 
@@ -35,6 +35,8 @@ def render_all() -> dict[str, str]:
         out[f"{name}-feedback-fixes.txt"] = feedback._system_prompt(pack, FIXES)
         out[f"{name}-drill.txt"] = drill.system_prompt(pack)
         out[f"{name}-prep.txt"] = prep.system_prompt(pack)
+    out["consultant-feedback-voice.txt"] = feedback._system_prompt(PACKS["consultant"], evidence=VOICE_EVIDENCE)
+    out["report_schema_voice.json"] = json.dumps(feedback.report_schema(None, voice=True), indent=2, sort_keys=True) + "\n"
     out["report_schema.json"] = json.dumps(feedback.REPORT_SCHEMA, indent=2, sort_keys=True) + "\n"
     out["drill_schema.json"] = json.dumps(drill.SCHEMA, indent=2, sort_keys=True) + "\n"
     return out

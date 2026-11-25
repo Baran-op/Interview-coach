@@ -477,7 +477,7 @@ rows.
 - [x] V4. Word timestamps for every spoken turn, filled before the report call; timing measured; Drill words
       gathered alongside scoring.
 - [x] V5. Usual-range baseline keys (`center_hz`, `p10_st`, `p90_st`, `window_range_st`) plus backfill.
-- [ ] V6. Voice evidence in the transcript, `{voice_rules}` slot, `voice_advice` schema, `normalise`
+- [x] V6. Voice evidence in the transcript, `{voice_rules}` slot, `voice_advice` schema, `normalise`
       checks, new goldens, rescore/markdown/backfill.
 - [ ] V7. Routes: turn audio (ranges) and turn voice track (on demand, LRU, lazy words).
 - [ ] V8. Review Voice tab: tabs and routing, question list, turn blocks, empty states.

@@ -57,3 +57,18 @@ HISTORY = [
 ]
 
 FIXES = ["Lead with the result.", "Say 'I' not 'we'.", "Quantify the outcome."]
+
+
+# Fictional voice evidence (PLAN-voice.md V6) for the voice golden: one turn with one advised flat stretch.
+VOICE_EVIDENCE = {
+    5: {
+        "stats": {"pitch_range_st": 3.1},
+        "flags": ["flat"],
+        "usual": 5.4,
+        "sections": [{
+            "id": "T5.1", "turn_idx": 5, "start_ms": 21000, "end_ms": 33000, "range_st": 1.6, "pitched_s": 6.2,
+            "advice_ok": True, "provisional": True, "session_start_ms": None, "session_end_ms": None,
+            "words": "so we moved the finance team onto the new ledger in three weeks and then we".split(),
+        }],
+    },
+}

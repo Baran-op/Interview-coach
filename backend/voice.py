@@ -7,6 +7,12 @@ a session-clock time by the lengths of the segments before it. Times are millise
 
 from __future__ import annotations
 
+import logging
+import re
+from pathlib import Path
+
+log = logging.getLogger("interview-coach.voice")
+
 
 def _spans(segments) -> list[tuple[float, float, float]]:
     """(start, end, wav offset of the start) per segment, in order; empty for no usable segments."""
@@ -198,3 +204,140 @@ def cap_session(sections: list[dict], limit: int = MAX_PER_SESSION) -> list[dict
     for s in sections:
         s["advice_ok"] = s["id"] in keep
     return sections
+
+
+# ------------------------------------------------------- evidence for the report (V6) --- #
+
+MAX_QUOTE_WORDS = 40  # words of a flat stretch sent to Claude and stored
+_MAX_TEXT = 300  # say_it and why
+_STATE_RE = re.compile(
+    r"\b(?:confiden\w*|nervous\w*|anxi\w*|bored\w*|boring|unsure|shy|enthusias\w*|passion\w*|excite\w*|insecur\w*|timid\w*)",
+    re.IGNORECASE,
+)
+
+
+def words_in(words, start_ms: float, end_ms: float, limit: int | None = MAX_QUOTE_WORDS) -> list[str]:
+    """The words whose midpoint falls inside a WAV-time span (the exact words of a stretch), at most ``limit``."""
+    out = [w["w"] for w in words or [] if start_ms <= (w["start_ms"] + w["end_ms"]) / 2 < end_ms]
+    return out if limit is None else out[:limit]
+
+
+def _fmt_time(ms: float) -> str:
+    return delivery._mmss(ms / 1000)
+
+
+def turn_evidence(turns: list[dict], audio_dir, baseline: dict | None = None) -> dict[int, dict]:
+    """Voice evidence per spoken candidate turn, computed locally before the report request.
+
+    ``{turn_idx: {"stats": voice_stats | None, "flags": [...], "usual": baseline pitch range | None,
+    "sections": [section]}}`` for every candidate turn whose ``<idx>.wav`` is readable. A section is
+    ``{id, turn_idx, start_ms, end_ms (WAV time), session_start_ms, session_end_ms (None without segments),
+    range_st, pitched_s, advice_ok, provisional, words}``. The ``MAX_PER_SESSION`` flattest sections (and at
+    most ``MAX_PER_TURN`` per turn) have ``advice_ok``: only those go to Claude. Never raises on bad audio.
+    """
+    out: dict[int, dict] = {}
+    all_sections: list[dict] = []
+    for t in turns:
+        if t.get("speaker") != "candidate":
+            continue
+        try:
+            wav = delivery.read_wav(Path(audio_dir) / f"{t['idx']}.wav")
+            if wav is None:
+                continue
+            track = delivery.pitch_track(*wav)
+            stats = delivery.voice_stats(*wav)
+            segs = t.get("segments")
+            secs = flat_sections(track, joins(segs), baseline, t["idx"], t.get("words"))
+            for s in secs:
+                s["turn_idx"] = t["idx"]
+                s["session_start_ms"] = _round(wav_to_session(s["start_ms"], segs))
+                s["session_end_ms"] = _round(wav_to_session(s["end_ms"], segs))
+                s["provisional"] = THRESHOLDS_PROVISIONAL
+                s["words"] = words_in(t.get("words"), s["start_ms"], s["end_ms"])
+                s["advice_ok"] = s["advice_ok"] and bool(s["words"])  # advice quotes real words: none, no advice
+            out[t["idx"]] = {"stats": stats, "flags": delivery.voice_flags(stats, baseline),
+                             "usual": (baseline or {}).get("pitch_range_st"), "sections": secs}
+            all_sections += secs
+        except Exception as exc:  # audio trouble never fails a report
+            log.warning("Voice evidence failed for turn %s: %s", t.get("idx"), exc)
+    cap_session(all_sections)
+    return out
+
+
+def _round(v):
+    return None if v is None else int(round(v))
+
+
+def advised_sections(evidence: dict | None) -> list[dict]:
+    """The sections that go to Claude for advice, in turn order."""
+    return [s for idx in sorted(evidence or {}) for s in evidence[idx]["sections"] if s.get("advice_ok")]
+
+
+def evidence_line(turn_idx: int, evidence: dict | None) -> str | None:
+    """The indented line under a candidate turn in the report transcript, or None when it has no advised stretch."""
+    ev = (evidence or {}).get(turn_idx)
+    secs = [s for s in (ev or {}).get("sections", []) if s.get("advice_ok")]
+    if not secs:
+        return None
+    parts = []
+    pitch = (ev["stats"] or {}).get("pitch_range_st")
+    if pitch is not None:
+        parts.append(f"pitch range {pitch:.1f} st" + (f", your usual {ev['usual']:.1f}" if ev.get("usual") else ""))
+    for s in secs:
+        quote = " ".join(s["words"]).replace('"', "'")
+        parts.append(f"flat stretch {s['id']} at {_fmt_time(s['start_ms'])}-{_fmt_time(s['end_ms'])} of this answer, "
+                     f"range {s['range_st']:.1f} st over {round((s['end_ms'] - s['start_ms']) / 1000)} s, "
+                     f'words: "{quote}"')
+    return f"  (voice, measured: {'; '.join(parts)})"
+
+
+def rules_text(evidence: dict | None) -> str:
+    """The ``{voice_rules}`` slot of the report prompt: empty with no advised stretch (today's prompt)."""
+    if not advised_sections(evidence):
+        return ""
+    return (Path(__file__).parent / "prompts" / "voice_rules.txt").read_text(encoding="utf-8")
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in (re.sub(r"[^\w']", "", w.casefold()).strip("'") for w in str(text).split()) if t]
+
+
+def clean_advice(items, sections_by_id: dict[str, dict]) -> list[dict]:
+    """Keep the valid ``voice_advice`` items of one answer (``sections_by_id``: the sections of its turns).
+
+    An item stays only when its section is one of the answer's, every stress word appears in that section's
+    words (casefolded, punctuation stripped), and nothing in it names a feeling or trait (those are logged and
+    dropped). ``say_it`` and ``why`` are cut at 300 characters. At most one item per section.
+    """
+    out, seen = [], set()
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        sec = sections_by_id.get(str(it.get("section") or "").strip())
+        if sec is None or sec["id"] in seen:
+            continue
+        stress = [str(x).strip() for x in (it.get("stress") or []) if str(x).strip()][:3] if isinstance(it.get("stress"), list) else []
+        say_it, why = str(it.get("say_it") or "").strip()[:_MAX_TEXT], str(it.get("why") or "").strip()[:_MAX_TEXT]
+        spoken = {t for w in sec.get("words") or [] for t in _tokens(w)}
+        if not stress or not say_it or not why or not all(t in spoken for x in stress for t in _tokens(x)):
+            log.info("Dropped voice advice for %s: stress words are not in the stretch", sec["id"])
+            continue
+        if _STATE_RE.search(" ".join([*stress, say_it, why])):
+            log.info("Dropped voice advice for %s: it names a feeling or trait", sec["id"])
+            continue
+        seen.add(sec["id"])
+        out.append({"section": sec["id"], "stress": stress, "say_it": say_it, "why": why})
+    return out
+
+
+def answer_sections(mine: list[dict], evidence: dict | None, advice: list[dict] | None = None) -> list[dict]:
+    """The sections of one answer's turns for ``delivery.voice.sections``, each with its ``advice`` when it has one."""
+    by_id = {a["section"]: a for a in advice or []}
+    out = []
+    for t in mine:
+        for s in (evidence or {}).get(t["idx"], {}).get("sections", []):
+            s = dict(s)
+            if s["id"] in by_id:
+                s["advice"] = {k: by_id[s["id"]][k] for k in ("stress", "say_it", "why")}
+            out.append(s)
+    return out

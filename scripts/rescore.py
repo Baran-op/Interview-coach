@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import brief, db, feedback  # noqa: E402
+from backend import brief, db, feedback, voice  # noqa: E402
 
 
 def spread(values: list[float]) -> float:
@@ -52,12 +52,14 @@ async def run(session_id: str, n: int) -> list[dict]:
     if not any(t["speaker"] == "candidate" for t in turns):
         raise SystemExit("That session has no answers")
     snapshot = feedback.session_brief(session)  # the session's own rubric, as the stored report used
-    system, transcript = feedback._system_prompt(pack, brief=snapshot), feedback._transcript(turns)
-    schema = feedback.report_schema(snapshot)
+    # the same voice evidence the live report saw: flat stretches from the saved WAVs and stored word offsets
+    evidence = voice.turn_evidence(turns, db.ANSWERS_DIR / session_id, db.voice_baseline(exclude_session=session_id))
+    system, transcript = feedback._system_prompt(pack, brief=snapshot, evidence=evidence), feedback._transcript(turns, evidence)
+    schema = feedback.report_schema(snapshot, voice=bool(voice.advised_sections(evidence)))
     reports = []
     for i in range(n):
         print(f"run {i + 1}/{n} ...", file=sys.stderr)
-        reports.append(feedback.normalise(await feedback._ask_claude(system, transcript, schema), turns, snapshot))
+        reports.append(feedback.normalise(await feedback._ask_claude(system, transcript, schema), turns, snapshot, evidence))
     return reports
 
 
