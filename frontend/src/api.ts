@@ -197,6 +197,8 @@ export interface Turn {
   expressions: Expression[]
   t_start_ms: number | null
   t_end_ms: number | null
+  /** Set by the backend when it knows whether an answer WAV was saved; the Voice tab otherwise finds out from /voice. */
+  has_audio?: boolean
 }
 
 export type ReportStatus = 'pending' | 'ready' | 'error' | 'none'
@@ -285,6 +287,8 @@ export interface VoiceStats {
   loudness_range_db: number | null
   trail_off_pct: number | null
   voiced_s: number
+  /** Flat stretches stored with the report (Voice tab); absent on older reports. */
+  sections?: VoiceSection[]
 }
 
 export type VoiceFlag = 'flat' | 'lively' | 'trailing'
@@ -293,7 +297,54 @@ export type VoiceFlag = 'flat' | 'lively' | 'trailing'
 export interface VoiceDelivery {
   voice?: VoiceStats | null
   voice_flags?: VoiceFlag[]
-  voice_usual?: Pick<VoiceStats, 'pitch_range_st' | 'loudness_range_db' | 'trail_off_pct'> | null
+  voice_usual?: (Pick<VoiceStats, 'pitch_range_st' | 'loudness_range_db' | 'trail_off_pct'> & { window_range_st?: number | null }) | null
+}
+
+/** Advice for one flat stretch (V6). Written in the report request; behaviour words only. */
+export interface VoiceAdvice {
+  section?: string
+  stress: string[]
+  say_it: string
+  why: string
+}
+
+/** A flat stretch of one turn's audio. Times are WAV time. The report's stored copy may also carry `wav_ms`, `session_ms`, `turn_idx`, `words` and `advice`; every extra is optional. */
+export interface VoiceSection {
+  id: string
+  start_ms: number
+  end_ms: number
+  range_st: number | null
+  pitched_s?: number | null
+  turn_idx?: number
+  session_ms?: { start_ms: number; end_ms: number } | [number, number] | null
+  words?: string | string[]
+  advice?: VoiceAdvice | null
+}
+
+export interface TurnVoiceWord {
+  w: string
+  start_ms: number
+  end_ms: number
+}
+
+/** GET /sessions/{id}/turns/{idx}/voice (and, with the same shape, the drill attempt's /voice). */
+export interface TurnVoice {
+  duration_ms: number
+  frame_ms: number
+  /** Semitones relative to your usual centre (or this turn's median), null where unpitched. */
+  pitch_st: (number | null)[]
+  center_hz: number | null
+  usual: { p10_st: number; p90_st: number } | null
+  /** Number of measured answers behind `usual`, when the backend says. */
+  baseline_n?: number
+  segments: { start_ms: number; end_ms: number }[] | null
+  joins: { wav_ms: number; cut_ms: number }[]
+  words: TurnVoiceWord[] | null
+  words_pending: boolean
+  sections: VoiceSection[]
+  sections_stored: boolean
+  stats: Partial<VoiceStats> & Record<string, unknown>
+  reason: null | 'typed' | 'no_audio' | 'too_short'
 }
 
 export const VOICE_FLAG_LABEL: Record<VoiceFlag, string> = { flat: 'flat', lively: 'lively', trailing: 'trailing off' }
@@ -660,4 +711,12 @@ export const api = {
   recordingUrl: (sessionId: string, download = false) =>
     `/api/sessions/${sessionId}/recording${download ? '?download=1' : ''}`,
   reportMdUrl: (sessionId: string) => `/api/sessions/${sessionId}/report.md`,
+  /** The saved WAV of one candidate turn (byte ranges supported). */
+  turnAudioUrl: (sessionId: string, idx: number) => `/api/sessions/${sessionId}/turns/${idx}/audio`,
+  turnVoiceUrl: (sessionId: string, idx: number) => `/api/sessions/${sessionId}/turns/${idx}/voice`,
+  getTurnVoice: (sessionId: string, idx: number) => request<TurnVoice>(`/sessions/${sessionId}/turns/${idx}/voice`),
+  /** Drill attempt audio and voice (V12). The routes may not exist yet; callers treat a failure as "no graph". */
+  drillAudioUrl: (packId: string, attemptId: string) => `/api/packs/${packId}/drill/attempts/${attemptId}/audio`,
+  drillVoiceUrl: (packId: string, attemptId: string) => `/api/packs/${packId}/drill/attempts/${attemptId}/voice`,
+  getDrillVoice: (packId: string, attemptId: string) => request<TurnVoice>(`/packs/${packId}/drill/attempts/${attemptId}/voice`),
 }
