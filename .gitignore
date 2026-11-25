@@ -19,3 +19,7 @@ frontend/dist/
 
 # avatars are personal (Avaturn builds them from your photo)
 frontend/public/avatars/*.glb
+
+# face tracking model and WASM (scripts/fetch_face_model.sh)
+frontend/public/models/
+frontend/public/mediapipe/

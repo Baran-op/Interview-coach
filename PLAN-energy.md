@@ -300,7 +300,7 @@ dependency.
 - [x] H1. 1a `delivery.voice_stats` with tests, and `scripts/voice_stats.py` (from 1b)
 - [x] H2. 1b Run the calibration on real answers; record thresholds below (no per-answer WAVs existed yet: starting thresholds kept, rerun once data exists)
 - [x] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
-- [ ] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json`
+- [x] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json` (built; camera and performance check still to verify by hand, see "H4 still to verify")
 - [ ] H5. 2b Face stats in the report and Review, with timed moments on the recording
 - [ ] H6. 2c What you were saying at each moment (word timestamps, VAD segments)
 - [ ] H7. 2d Face stats in Drill
@@ -327,3 +327,16 @@ Still to do by the user:
 3. By-ear check: listen to 2-3 WAVs at each end of the pitch range (the script prints each file's
    `pitch_range_st`; take the lowest and highest ones), confirm the low ones sound flat and the high
    ones lively, then adjust the thresholds above. Not done: it cannot be done without the audio.
+
+## H4 still to verify
+
+Built and type-checked, but never run with a real camera:
+
+1. `scripts/fetch_face_model.sh` has been run (model and WASM present, git-ignored). Start an interview in
+   *Webcam + audio* with the Setup toggle on; the console should log `[face] N ms/frame` every 10 s. If it
+   averages over 40 ms or the avatar stutters, drop `FPS` in `FaceTracker.ts` to 5, then try the CPU delegate.
+2. Finish a session and check `turns.face_json` is filled for each spoken answer, and empty in audio mode.
+3. Head pitch sign and thresholds (`LIMITS` in `src/face/stats.ts`) are starting values: read from notes for
+   10 s and confirm a `down` span appears; a 2 s glance sideways must not. The pure functions were only
+   exercised with synthetic frames (no frontend test runner exists, so `stats.ts` has no committed tests).
+4. `expr_windows` entries are `{start_ms, value}` (one number per 5 s window), not a `values` list.

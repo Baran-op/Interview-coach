@@ -6,6 +6,7 @@ import { SessionRecorder, getRecordMode } from '../audio/recorder'
 import { TurnListener } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 import Dropdown from '../components/Dropdown'
+import { FaceTracker, faceModelAvailable, getFaceTracking } from '../face/FaceTracker'
 
 type Phase =
   | 'starting' // opening the session
@@ -111,6 +112,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const pendingBlob = useRef<Blob | null>(null) // recording not yet uploaded
   const endSaved = useRef(false) // /end succeeded
   const avatarRef = useRef<AvatarController | null>(null)
+  const faceRef = useRef<FaceTracker | null>(null) // eye contact + expression stats; numbers only
   const avatarWait = useRef<{ resolve: (ok: boolean) => void } | null>(null)
   const selfView = useRef<HTMLVideoElement>(null)
   // When each turn happened, in ms on the recording's clock (pauses excluded).
@@ -207,6 +209,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       setSaving('Saving the session…')
       pendingBlob.current = recorderRef.current ? await recorderRef.current.stop() : null
       recorderRef.current = null
+      faceRef.current?.stop()
+      faceRef.current = null
       setCamStream(null)
     } catch (e) {
       setError(`Could not finish the recording: ${(e as Error).message}`)
@@ -228,6 +232,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     try {
       await recorderRef.current?.stop().catch(() => null) // release mic and camera; the blob is dropped
       recorderRef.current = null
+      faceRef.current?.stop()
+      faceRef.current = null
       pendingBlob.current = null
       setCamStream(null)
       await api.endSession(id, [], false)
@@ -244,6 +250,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     if (phaseRef.current === 'ended' || phaseRef.current === 'finished') return
     listenStart.current = clockNow()
     speechStart.current = null
+    faceRef.current?.endSegment() // the interviewer's turn to speak is over: it calibrates "looking at the screen"
+    faceRef.current?.startSegment('answer')
     setPhase('listening')
     if (voiceRef.current && listenerRef.current) {
       try {
@@ -303,6 +311,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           player.enqueue(s, () => {
             if (replyStart === null) {
               replyStart = clockNow()
+              faceRef.current?.startSegment('listen')
               currentReply.current = { idx: ev.turn_idx, start: replyStart }
             }
             setCaption(ev.text)
@@ -357,7 +366,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     const silenceMs = bySilence ? silenceRef.current : 0
     const end = Math.max(0, clockNow() - silenceMs)
     const answerSpan = { start: Math.min(speechStart.current ?? listenStart.current, end), end, listen: listenStart.current }
-    void runReply(api.sendAudio(id, encodeWav(audio)), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
+    const face = faceRef.current?.endSegment() ?? null
+    void runReply(api.sendAudio(id, encodeWav(audio), face), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
   }
 
   const submitText = async () => {
@@ -370,7 +380,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     if (listenerRef.current?.listening) await listenerRef.current.cancel()
     const candidateMsg = addMessage({ speaker: 'candidate', text })
     const answerSpan = { start: listenStart.current, end: clockNow(), listen: listenStart.current }
-    void runReply(api.sendText(id, text), { candidateMsg, answerSpan })
+    const face = faceRef.current?.endSegment() ?? null
+    void runReply(api.sendText(id, text, face), { candidateMsg, answerSpan })
   }
 
   // ------------------------------------------------------------- setup -- //
@@ -380,6 +391,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     phaseRef.current = 'ended'
     recorderRef.current?.release()
     recorderRef.current = null
+    faceRef.current?.stop()
+    faceRef.current = null
     void listenerRef.current?.destroy()
     playerRef.current?.destroy()
     listenerRef.current = null
@@ -475,6 +488,11 @@ export default function Interview({ pack, onExit, onReview }: Props) {
             setRecording(rec.mode)
             setCamStream(rec.camera)
             if (rec.mode !== mode) setNotice(`Recording ${rec.mode === 'audio' ? 'audio only' : rec.mode} (${mode} unavailable).`)
+            // Face stats need the camera; without the model or a camera the interview runs as before.
+            if (rec.camera && getFaceTracking() && (await faceModelAvailable())) {
+              faceRef.current = await FaceTracker.create(rec.camera, clockNow)
+              if (!faceRef.current) console.warn('Face tracking is off: the model could not be loaded.')
+            }
           } catch (e) {
             setNotice(`Not recording: ${(e as Error).message}`)
           }

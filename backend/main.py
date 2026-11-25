@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from . import db, delivery, drill, feedback, gpu, prep, research, stt, tts
 from .categories import resolve_category
+from .face import clean_face
 from .brain import (
     OPENING_CUE,
     time_note,
@@ -652,6 +653,7 @@ async def take_turn(session_id: str, request: Request):
     try:
         stt_ms = None
         audio_bytes = None
+        face_raw = None
         if request.headers.get("content-type", "").startswith("multipart/form-data"):
             form = await request.form()
             upload = form.get("audio")
@@ -661,6 +663,7 @@ async def take_turn(session_id: str, request: Request):
                 raise HTTPException(503, f"Speech recognition is not ready ({stt.state['status']})")
             data = await upload.read()
             audio_bytes = data
+            face_raw = form.get("face")
             try:
                 answer = await gpu.run(stt.transcribe, data, live.stt_prompt)
             except Exception as exc:
@@ -671,6 +674,7 @@ async def take_turn(session_id: str, request: Request):
         else:
             body = await request.json()
             answer = str((body or {}).get("text") or "").strip()
+            face_raw = (body or {}).get("face") if isinstance(body, dict) else None
             if not answer:
                 raise HTTPException(422, "Empty answer")
     except BaseException:
@@ -678,6 +682,9 @@ async def take_turn(session_id: str, request: Request):
         raise
 
     turn_idx = db.add_turn(session_id, "candidate", answer)
+    face = clean_face(face_raw, int(time.time() * 1000) - live.started_at_ms + 2000)
+    if face:
+        db.set_turn_face(session_id, turn_idx, face)
     if audio_bytes:
         asyncio.create_task(asyncio.to_thread(_save_answer_audio, session_id, turn_idx, audio_bytes))
     to_claude = time_note(live.options, live.started_at_ms, int(time.time() * 1000)) + answer

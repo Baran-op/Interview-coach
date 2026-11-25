@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, type Pack, type PackInput, type SessionListItem } from '../api'
 import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
+import { faceModelAvailable, getFaceTracking, setFaceTracking } from '../face/FaceTracker'
 
 import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
 
@@ -88,9 +89,12 @@ export default function Setup({ onStart, editPackId }: Props) {
   const [sources, setSources] = useState<string[]>([])
   const [voices, setVoices] = useState<string[]>(['af_heart'])
   const [recordMode, setMode] = useState<RecordMode>(getRecordMode)
+  const [faceOn, setFaceOn] = useState(getFaceTracking)
+  const [faceModel, setFaceModel] = useState<boolean | null>(null) // null: still checking
   const [sessions, setSessions] = useState<SessionListItem[]>([])
 
   useEffect(() => {
+    void faceModelAvailable().then(setFaceModel)
     api
       .listSessions(8)
       .then(setSessions)
@@ -376,6 +380,25 @@ export default function Setup({ onStart, editPackId }: Props) {
                   setRecordMode(m)
                 }}
               />
+            </div>
+            <div className="field wide">
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={faceOn && faceModel === true}
+                  disabled={faceModel !== true}
+                  onChange={(e) => {
+                    setFaceOn(e.target.checked)
+                    setFaceTracking(e.target.checked)
+                  }}
+                />
+                Track eye contact and expression (stays on this computer)
+              </label>
+              <span className="hint">
+                {faceModel === false
+                  ? 'Face model not installed: run scripts/fetch_face_model.sh once (see the README). Everything else works without it.'
+                  : 'Needs the webcam in the recording ("Webcam + audio" or "Avatar and webcam side by side"). Only numbers are kept, never video frames.'}
+              </span>
             </div>
           </div>
         </details>

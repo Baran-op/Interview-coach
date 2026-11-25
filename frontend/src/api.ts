@@ -1,3 +1,4 @@
+import type { FaceStats } from './face/stats'
 export type InterviewType = 'behavioural' | 'technical' | 'mixed' | 'case' | 'roleplay'
 export type Stage = 'screen' | 'full' | 'final'
 export type Difficulty = 'easy' | 'medium' | 'hard'
@@ -365,14 +366,15 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pack_id: packId }),
     }),
-  sendText: (sessionId: string, text: string) =>
+  sendText: (sessionId: string, text: string, face?: FaceStats | null) =>
     streamEvents(`/sessions/${sessionId}/turn`, {
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(face ? { text, face } : { text }),
     }),
-  sendAudio: (sessionId: string, wav: Blob) => {
+  sendAudio: (sessionId: string, wav: Blob, face?: FaceStats | null) => {
     const form = new FormData()
     form.append('audio', wav, 'answer.wav')
+    if (face) form.append('face', JSON.stringify(face))
     return streamEvents(`/sessions/${sessionId}/turn`, { body: form })
   },
   endSession: (sessionId: string, timeline: TurnTiming[] = [], score = true) =>

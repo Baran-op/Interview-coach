@@ -94,6 +94,7 @@ _EXTRA_COLUMNS = {
     },
     "turns": {
         "t_listen_ms": "INTEGER",  # when the mic opened for this answer
+        "face_json": "TEXT",       # per-answer face stats from the browser (numbers only)
     },
 }
 
@@ -194,6 +195,14 @@ def add_turn(session_id: str, speaker: str, text: str, expressions: list | None 
     return idx
 
 
+def set_turn_face(session_id: str, idx: int, face: dict | None) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE turns SET face_json = ? WHERE session_id = ? AND idx = ?",
+            (json.dumps(face) if face else None, session_id, idx),
+        )
+
+
 def set_turn_times(session_id: str, timeline: list[dict]) -> None:
     """timeline: [{turn_idx, t_start_ms, t_end_ms, t_listen_ms?}], times relative to the recording start."""
     with connect() as conn:
@@ -278,6 +287,7 @@ def list_turns(session_id: str) -> list[dict]:
     for r in rows:
         d = dict(r)
         d["expressions"] = json.loads(d.pop("expressions_json") or "[]")
+        d["face"] = json.loads(d.pop("face_json") or "null")
         out.append(d)
     return out
 
