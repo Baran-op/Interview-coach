@@ -480,9 +480,9 @@ rows.
 - [x] V6. Voice evidence in the transcript, `{voice_rules}` slot, `voice_advice` schema, `normalise`
       checks, new goldens, rescore/markdown/backfill.
 - [x] V7. Routes: turn audio (ranges) and turn voice track (on demand, LRU, lazy words).
-- [ ] V8. Review Voice tab: tabs and routing, question list, turn blocks, empty states.
-- [ ] V9. `VoiceGraph` canvas: waveform plus pitch, seek/select/loop/zoom, keyboard and touch, word sync.
-- [ ] V10. Flat-section cards: hear it, exact words, advice.
-- [x] V11 (backend part: sections on the attempt, words alongside scoring). Try again in Drill with "Last time" box and old-vs-new pitch comparison.
-- [ ] V12 (later). Drill graphs.
-- [ ] V13. Docs (README, SPEC, CLAUDE.md) and an end-to-end check on one real interview.
+- [x] V8. Review Voice tab: tabs and routing, question list, turn blocks, empty states.
+- [x] V9. `VoiceGraph` canvas: waveform plus pitch, seek/select/loop/zoom, keyboard and touch, word sync.
+- [x] V10. Flat-section cards: hear it, exact words, advice.
+- [x] V11. Try again in Drill with "Last time" box and old-vs-new pitch comparison.
+- [x] V12 (built; untested against a live backend). Drill graphs.
+- [ ] V13 (docs done; the end-to-end check on a real interview is yours). Docs (README, SPEC, CLAUDE.md) and an end-to-end check on one real interview.

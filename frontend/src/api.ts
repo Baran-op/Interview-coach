@@ -308,7 +308,7 @@ export interface VoiceAdvice {
   why: string
 }
 
-/** A flat stretch of one turn's audio. Times are WAV time. The report's stored copy may also carry `wav_ms`, `session_ms`, `turn_idx`, `words` and `advice`; every extra is optional. */
+/** A flat stretch of one turn's audio. Times are WAV time. The report's stored copy may also carry `session_start_ms`, `session_end_ms`, `turn_idx`, `words` and `advice`; every extra is optional. */
 export interface VoiceSection {
   id: string
   start_ms: number
@@ -316,7 +316,10 @@ export interface VoiceSection {
   range_st: number | null
   pitched_s?: number | null
   turn_idx?: number
-  session_ms?: { start_ms: number; end_ms: number } | [number, number] | null
+  session_start_ms?: number | null
+  session_end_ms?: number | null
+  advice_ok?: boolean
+  provisional?: boolean
   words?: string | string[]
   advice?: VoiceAdvice | null
 }

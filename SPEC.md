@@ -165,6 +165,14 @@ Everything downstream reads the brief, never the raw materials:
   and categories it was scored with; once a pack has a scored session its rubric is frozen and changing
   it starts History comparisons fresh (only sessions with the same criteria are compared).
 
+### Voice analysis (PLAN-voice.md)
+
+Review has a Voice tab: per answer, a waveform and pitch line from the saved answer WAV, your usual band, and flat
+stretches (10 s windows with a narrow pitch spread, thresholds provisional until calibrated on your own recordings).
+Each stretch plays back with the exact words said; advice (what to stress, how to say it) comes from the same single
+report request. Behaviour words only, never feelings; voice never changes scores. Drill attempts get the same
+stretches and an old-vs-new comparison via "Try again in Drill".
+
 ### Storage
 
 ```

@@ -679,6 +679,51 @@ def _drill_sections(audio_path: str, segments: list | None, words: list | None, 
         return []
 
 
+def _attempt_wav(pack_id: str, attempt_id: str) -> tuple[dict, Path]:
+    a = next((x for x in db.list_attempts(pack_id) if x["id"] == attempt_id), None)
+    if not a:
+        raise HTTPException(404, "Attempt not found")
+    path = Path(a["audio_path"]) if a.get("audio_path") else None
+    if not path or not path.exists():
+        raise HTTPException(404, "No audio was saved for this attempt")
+    return a, path
+
+
+@app.get("/packs/{pack_id}/drill/attempts/{attempt_id}/audio")
+async def get_attempt_audio(pack_id: str, attempt_id: str):
+    """A drill answer's saved WAV (byte ranges supported). The path comes from the stored row."""
+    _, path = _attempt_wav(pack_id, attempt_id)
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.get("/packs/{pack_id}/drill/attempts/{attempt_id}/voice")
+async def get_attempt_voice(pack_id: str, attempt_id: str):
+    """Same shape as a turn's /voice (V12). Segments and word offsets aren't kept for drill attempts, so the graph
+    runs on audio time without word sync; flat stretches are the ones stored with the attempt."""
+    a, path = _attempt_wav(pack_id, attempt_id)
+    audio = await asyncio.to_thread(voice.load_audio, path)
+    out = {"duration_ms": None, "frame_ms": int(delivery.FRAME_S * 1000), "pitch_st": [], "center_hz": None, "usual": None,
+           "segments": None, "joins": [], "words": None, "words_pending": False, "sections": [],
+           "sections_stored": True, "stats": None, "reason": "no_audio"}
+    if audio is None:
+        return out
+    baseline = db.voice_baseline(exclude_attempt=a["id"])
+    track, stats = audio["track"], audio["stats"]
+    pitched = track["f0_hz"][~np.isnan(track["f0_hz"])]
+    centre = (baseline or {}).get("center_hz") or (float(np.median(pitched)) if len(pitched) else None)
+    out.update({
+        "duration_ms": audio["duration_ms"],
+        "pitch_st": voice.pitch_payload(track, centre),
+        "center_hz": round(centre, 1) if centre else None,
+        "usual": {"p10_st": baseline["p10_st"], "p90_st": baseline["p90_st"]}
+        if baseline and baseline.get("p10_st") is not None and baseline.get("p90_st") is not None else None,
+        "sections": (((a.get("result") or {}).get("delivery") or {}).get("voice") or {}).get("sections") or [],
+        "stats": stats,
+        "reason": "too_short" if stats is None else None,
+    })
+    return out
+
+
 @app.post("/packs/{pack_id}/drill/attempts")
 async def drill_attempt(pack_id: str, request: Request):
     """Multipart `audio` (WAV) with `question`, `category`, `seconds`; or JSON {question, category, text, seconds?}."""
@@ -984,7 +1029,8 @@ async def delete_session(session_id: str):
 async def session_turns(session_id: str):
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
-    return db.list_turns(session_id)
+    return [t | {"has_audio": (db.ANSWERS_DIR / session_id / f"{int(t['idx'])}.wav").exists()}
+            for t in db.list_turns(session_id)]
 
 
 def _answer_wav(session_id: str, idx: int) -> tuple[dict, dict, Path]:
