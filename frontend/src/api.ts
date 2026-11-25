@@ -242,10 +242,10 @@ export const api = {
     form.append('audio', wav, 'answer.wav')
     return streamEvents(`/sessions/${sessionId}/turn`, { body: form })
   },
-  endSession: (sessionId: string, timeline: TurnTiming[] = []) =>
+  endSession: (sessionId: string, timeline: TurnTiming[] = [], score = true) =>
     request<{ ended: boolean }>(`/sessions/${sessionId}/end`, {
       method: 'POST',
-      body: JSON.stringify({ timeline }),
+      body: JSON.stringify({ timeline, score }),
     }),
   uploadRecording: async (sessionId: string, blob: Blob) => {
     const form = new FormData()

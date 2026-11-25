@@ -82,6 +82,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const [elapsed, setElapsed] = useState(0)
   const [saving, setSaving] = useState<string | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
+  const [confirmEnd, setConfirmEnd] = useState(false) // asking: score, discard or keep going
   const [camStream, setCamStream] = useState<MediaStream | null>(null)
   const [recording, setRecording] = useState<string | null>(null)
   // The 3D avatar mounts once we know an avatar file exists.
@@ -205,6 +206,32 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       setError(`Could not finish the recording: ${(e as Error).message}`)
     }
     await saveSession()
+  }
+
+  /** Stop everything, then end the session without scoring it and delete it. */
+  const discardInterview = async () => {
+    const id = sessionRef.current
+    setConfirmEnd(false)
+    if (phaseRef.current === 'ended' || !id) return
+    setPhase('ended')
+    playerRef.current?.stop()
+    avatarRef.current?.stop()
+    await listenerRef.current?.cancel().catch(() => {})
+    setMicSpeaking(false)
+    setSaving('Discarding the session…')
+    try {
+      await recorderRef.current?.stop().catch(() => null) // release mic and camera; the blob is dropped
+      recorderRef.current = null
+      pendingBlob.current = null
+      setCamStream(null)
+      await api.endSession(id, [], false)
+      await api.deleteSession(id)
+      sessionRef.current = null
+      onExit()
+    } catch (e) {
+      setSaving(null)
+      setError(`Could not discard the session: ${(e as Error).message}`)
+    }
   }
 
   const startListening = async () => {
@@ -608,7 +635,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           {pack.options.minutes ? ` / ${pack.options.minutes}:00` : ''}
         </span>
         {live ? (
-          <button className="danger" onClick={() => void finishInterview()} disabled={!sessionRef.current}>
+          <button className="danger" onClick={() => setConfirmEnd(true)} disabled={!sessionRef.current || confirmEnd}>
             End interview
           </button>
         ) : saving ? null : (
@@ -621,6 +648,14 @@ export default function Interview({ pack, onExit, onReview }: Props) {
         )}
       </div>
       {saving && <div className="banner">{saving}</div>}
+      {confirmEnd && live && (
+        <div className="banner" role="alertdialog" aria-label="End the interview early">
+          End before {interviewer} has wrapped up? Scoring it costs one Claude request.{' '}
+          <button onClick={() => { setConfirmEnd(false); void finishInterview() }}>Score it</button>{' '}
+          <button className="danger" onClick={() => void discardInterview()}>Discard it</button>{' '}
+          <button onClick={() => setConfirmEnd(false)}>Keep going</button>
+        </div>
+      )}
 
       {voiceNote && <div className="banner">{voiceNote}</div>}
       {needsUnlock && (

@@ -55,6 +55,6 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - `prompts/interviewer.txt` scripts the whole interview: intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step.
 - Keep all avatar interaction going through `AvatarController.say()`.
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
-- Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper.
+- Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper. Ending early asks Score / Discard / Keep going; Discard sends `/end` with `score:false` then `DELETE /sessions/{id}`; the beacon and reaper always score.
   The Interview page keeps the recording blob in memory and `saveSession()` is retryable (Retry / Download buttons).
 - Full API table and usage docs live in `README.md`; don't duplicate them here.

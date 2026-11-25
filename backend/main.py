@@ -116,14 +116,17 @@ async def load_models() -> None:
     await gpu.run(tts.load)
 
 
-async def finish_session(session_id: str, timeline: list[dict] | None = None) -> None:
-    """Close the Claude client, store turn timings, mark the session ended and start its report."""
+async def finish_session(session_id: str, timeline: list[dict] | None = None, score: bool = True) -> None:
+    """Close the Claude client, store turn timings, mark the session ended and start its report
+    (unless score is false, e.g. the user is about to discard the session)."""
     live = LIVE.pop(session_id, None)
     if live:
         await live.brain.close()
     if timeline:
         db.set_turn_times(session_id, timeline)
     db.end_session(session_id)
+    if not score:
+        return
     report = db.get_report(session_id)
     if not report or report["status"] == "error":
         start_report(session_id)
@@ -200,6 +203,8 @@ class TurnTiming(BaseModel):
 class EndIn(BaseModel):
     # When each turn started/ended, in ms from the start of the recording.
     timeline: list[TurnTiming] = []
+    # False when the user is discarding the session: no report is started.
+    score: bool = True
 
 
 # ------------------------------------------------------------- streaming --- #
@@ -514,8 +519,9 @@ async def end_session(session_id: str, body: EndIn | None = None):
     """Close the Claude client, store turn timings and start the feedback report."""
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
-    await finish_session(session_id, [t.model_dump() for t in body.timeline] if body else None)
-    return {"session_id": session_id, "ended": True, "report_status": "pending"}
+    score = body.score if body else True
+    await finish_session(session_id, [t.model_dump() for t in body.timeline] if body else None, score)
+    return {"session_id": session_id, "ended": True, "report_status": "pending" if score else None}
 
 
 @app.get("/sessions")

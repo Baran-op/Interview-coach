@@ -448,7 +448,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 **Phase B: progress you can trust**
 
 - [ ] B1. 0.2 Schema-checked JSON (spike; skip if it doesn't work)
-- [ ] B2. 3a Score or discard on early end
+- [x] B2. 3a Score or discard on early end
 - [ ] B3. 3b Partial sessions
 - [ ] B4. 3c Question categories
 - [ ] B5. 3d Score anchors and `rescore.py`

@@ -196,7 +196,7 @@ those words automatically.
 | GET | `/packs`, `/packs/{id}` | List or load packs |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
 | POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}` → streams the reply |
-| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms}]}`: closes the Claude client, stores turn timings, starts the report. Also sent by the browser on tab close, and by the server for idle interviews |
+| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
 | POST | `/sessions/{id}/recording` | Multipart `recording` (.webm) |
 | GET | `/sessions/{id}/recording` | The recording (range requests supported for seeking; `?download=1` to save) |
 | GET | `/sessions/{id}/report` | `{status: pending/ready/error, report, report_md, error}` |
