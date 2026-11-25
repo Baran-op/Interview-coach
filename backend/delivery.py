@@ -60,13 +60,8 @@ FRAME_S = 0.03
 _BRIDGE_FRAMES = 7  # dips shorter than ~200 ms are gaps between words, not pauses
 
 
-def audio_stats(wav_path, span_s: float | None = None) -> dict | None:
-    """Speaking and pause time from 30 ms RMS frames against the clip's own noise floor.
-
-    A held turn has its long pauses cut from the audio by the VAD, so when the turn's
-    timeline span is known, pause time is ``span_s - speaking_s``. Pauses over 1 s and the
-    longest pause are measured inside the clip. Returns None if the file can't be read.
-    """
+def read_wav(wav_path) -> tuple[np.ndarray, int] | None:
+    """Mono float samples in [-1, 1] and the sample rate of a 16-bit WAV, or None if unreadable."""
     try:
         with wave.open(str(wav_path), "rb") as w:
             rate, width, ch = w.getframerate(), w.getsampwidth(), w.getnchannels()
@@ -76,22 +71,48 @@ def audio_stats(wav_path, span_s: float | None = None) -> dict | None:
         x = np.frombuffer(raw[: len(raw) // 2 * 2], dtype="<i2").astype(np.float64) / 32768.0
         if ch > 1:
             x = x[: len(x) // ch * ch].reshape(-1, ch).mean(axis=1)
+        return x, rate
     except (OSError, EOFError, wave.Error):
         return None
+
+
+def voiced_frames(x: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray] | None:
+    """30 ms RMS per frame and the voiced mask (RMS over 3x the clip's 10th percentile and 0.01)."""
     n = int(rate * FRAME_S)
-    frames = len(x) // n
+    frames = len(x) // n if n > 0 else 0
     if frames == 0:
         return None
     rms = np.sqrt((x[: frames * n].reshape(frames, n) ** 2).mean(axis=1))
     floor = float(np.percentile(rms, 10))
-    voiced = rms > max(floor * 3.0, 0.01)
+    return rms, rms > max(floor * 3.0, 0.01)
+
+
+def _bridge(voiced: np.ndarray):
+    """Fill dips shorter than ``_BRIDGE_FRAMES`` in place; returns (voiced indices, silent run lengths between them)."""
     idx = np.flatnonzero(voiced)
-    if idx.size == 0:
-        return {"speaking_s": 0.0, "pause_s": round(max(span_s or 0.0, 0.0), 2), "pauses_over_1s": 0, "longest_pause_s": 0.0}
-    # Silent runs between the first and last voiced frame; short dips count as speech.
     gaps = np.diff(idx) - 1
     for k in np.flatnonzero(gaps < _BRIDGE_FRAMES):
         voiced[idx[k] : idx[k + 1]] = True
+    return idx, gaps
+
+
+def audio_stats(wav_path, span_s: float | None = None) -> dict | None:
+    """Speaking and pause time from 30 ms RMS frames against the clip's own noise floor.
+
+    A held turn has its long pauses cut from the audio by the VAD, so when the turn's
+    timeline span is known, pause time is ``span_s - speaking_s``. Pauses over 1 s and the
+    longest pause are measured inside the clip. Returns None if the file can't be read.
+    """
+    wav = read_wav(wav_path)
+    if wav is None:
+        return None
+    vf = voiced_frames(*wav)
+    if vf is None:
+        return None
+    voiced = vf[1]
+    idx, gaps = _bridge(voiced)
+    if idx.size == 0:
+        return {"speaking_s": 0.0, "pause_s": round(max(span_s or 0.0, 0.0), 2), "pauses_over_1s": 0, "longest_pause_s": 0.0}
     speaking = float(voiced.sum()) * FRAME_S
     pauses = [g * FRAME_S for g in gaps if g >= _BRIDGE_FRAMES]
     pause_s = max(span_s - speaking, 0.0) if span_s else float(sum(pauses))
@@ -100,6 +121,108 @@ def audio_stats(wav_path, span_s: float | None = None) -> dict | None:
         "pause_s": round(pause_s, 2),
         "pauses_over_1s": sum(1 for p in pauses if p >= 1.0),
         "longest_pause_s": round(max(pauses, default=0.0), 2),
+    }
+
+
+MIN_VOICED_S = 8.0
+_F0_MIN, _F0_MAX = 70.0, 400.0
+_YIN_THRESHOLD = 0.15  # cumulative mean normalised difference below this = clearly periodic
+_PHRASE_GAP_FRAMES = 9  # 250 ms or more splits phrases
+_PHRASE_MIN_FRAMES = 34  # phrases of 1 s or longer
+_TAIL_FRAMES = 10  # the last 300 ms
+_TRAIL_DB = 6.0
+
+
+def _f0(frame: np.ndarray, rate: int) -> float | None:
+    """YIN-style f0 of one frame (``frame`` holds window + max lag samples), or None if not clearly periodic."""
+    tau_min, tau_max = int(rate / _F0_MAX), int(rate / _F0_MIN)
+    w = len(frame) - tau_max
+    if w <= tau_max // 2:
+        return None
+    size = 1 << (len(frame) + w).bit_length()
+    acf = np.fft.irfft(np.fft.rfft(frame, size) * np.conj(np.fft.rfft(frame[:w], size)), size)[: tau_max + 1]
+    e = np.concatenate(([0.0], np.cumsum(frame**2)))
+    taus = np.arange(tau_max + 1)
+    d = e[w] + (e[taus + w] - e[taus]) - 2 * acf
+    d[0] = 0.0
+    cm = np.ones(tau_max + 1)
+    csum = np.cumsum(d[1:])
+    cm[1:] = d[1:] * taus[1:] / np.maximum(csum, 1e-12)
+    below = np.flatnonzero(cm[tau_min:tau_max] < _YIN_THRESHOLD)
+    if below.size == 0:
+        return None
+    t = tau_min + int(below[0])
+    while t + 1 < tau_max and cm[t + 1] < cm[t]:  # walk down to the local minimum
+        t += 1
+    a, b, c = cm[t - 1], cm[t], cm[t + 1]
+    denom = a - 2 * b + c
+    shift = 0.5 * (a - c) / denom if denom > 1e-12 else 0.0
+    return rate / (t + float(np.clip(shift, -1, 1)))
+
+
+def _pitch_range_st(x: np.ndarray, rate: int, voiced: np.ndarray) -> float | None:
+    n = int(rate * FRAME_S)
+    lag = int(rate / _F0_MIN)
+    f0s = []
+    for i in np.flatnonzero(voiced):
+        seg = x[i * n : i * n + n + lag]
+        if len(seg) < n + lag:
+            continue
+        f = _f0(seg, rate)
+        if f:
+            f0s.append(f)
+    if len(f0s) < 10:
+        return None
+    st = 12 * np.log2(np.array(f0s) / float(np.median(f0s)))
+    st = np.where(st > 9, st - 12, np.where(st < -9, st + 12, st))  # octave errors fold back
+    st = st[np.abs(st) <= 12]
+    if len(st) < 10:
+        return None
+    return float(np.percentile(st, 90) - np.percentile(st, 10))
+
+
+def voice_stats(samples, rate: int) -> dict | None:
+    """Pitch range, loudness range, trailing off and speaking time from mono float samples.
+
+    ``pitch_range_st`` and ``loudness_range_db`` are 10th-90th percentile spreads (semitones, dB);
+    ``trail_off_pct`` is the share of phrases (1 s+, split at 250 ms gaps) whose last 300 ms is 6 dB
+    or more under the rest. None below 8 s of voiced speech. ``pitch_range_st`` and ``trail_off_pct``
+    can be None when there's nothing to measure.
+    """
+    x = np.asarray(samples, dtype=np.float64)
+    vf = voiced_frames(x, rate)
+    if vf is None:
+        return None
+    rms, raw = vf
+    voiced = raw.copy()
+    idx, _ = _bridge(voiced)
+    voiced_s = float(voiced.sum()) * FRAME_S
+    if idx.size == 0 or voiced_s < MIN_VOICED_S:
+        return None
+    db = 20 * np.log10(np.maximum(rms, 1e-6))
+    lv = db[raw]
+    loud = float(np.percentile(lv, 90) - np.percentile(lv, 10))
+    # phrases: runs of voiced frames, joined across gaps shorter than 250 ms
+    runs: list[list[int]] = []
+    for i in np.flatnonzero(voiced):
+        if runs and i - runs[-1][1] - 1 < _PHRASE_GAP_FRAMES:
+            runs[-1][1] = int(i)
+        else:
+            runs.append([int(i), int(i)])
+    trail = []
+    for a, b in runs:
+        if b - a + 1 < _PHRASE_MIN_FRAMES:
+            continue
+        seg = rms[a : b + 1]
+        tail = 20 * np.log10(max(float(np.sqrt((seg[-_TAIL_FRAMES:] ** 2).mean())), 1e-6))
+        rest = float(np.median(db[a : b + 1 - _TAIL_FRAMES]))
+        trail.append(tail <= rest - _TRAIL_DB)
+    pitch = _pitch_range_st(x, rate, raw)
+    return {
+        "pitch_range_st": round(pitch, 2) if pitch is not None else None,
+        "loudness_range_db": round(loud, 1),
+        "trail_off_pct": round(100 * sum(trail) / len(trail)) if trail else None,
+        "voiced_s": round(voiced_s, 1),
     }
 
 

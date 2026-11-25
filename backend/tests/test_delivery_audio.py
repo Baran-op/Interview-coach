@@ -83,3 +83,54 @@ def test_delivery_line():
     d = {"first_answer_seconds": 72, "target": [60, 90], "wpm": 138, "i_count": 6, "we_count": 2,
          "numbers": 3, "fillers": 2, "hedges": 1, "pauses_over_1s": None}
     assert delivery.delivery_line(d) == "1:12 (aim 1:00-1:30) · 138 wpm · I 6 / we 2 · 3 numbers · 2 fillers · 1 hedge"
+
+
+# --- voice_stats ---------------------------------------------------------------------------
+
+import numpy as np  # noqa: E402
+
+_RATE = 16000
+
+
+def _tone(secs, f0=150.0, f1=None, amp=0.3, fall=None):
+    """Sine (or glide f0->f1) with a little harmonic content; ``fall`` = seconds over which the end fades to 10%."""
+    n = int(secs * _RATE)
+    f = np.linspace(f0, f1 if f1 else f0, n)
+    ph = 2 * np.pi * np.cumsum(f) / _RATE
+    y = amp * (np.sin(ph) + 0.4 * np.sin(2 * ph))
+    if fall:
+        k = int(fall * _RATE)
+        y[-k:] *= np.linspace(1.0, 0.1, k)
+    return y
+
+
+def _speech(phrase, n=4, gap=0.5):
+    quiet = np.zeros(int(gap * _RATE)) + 0.001 * np.sin(np.arange(int(gap * _RATE)))
+    return np.concatenate([np.concatenate([phrase, quiet]) for _ in range(n)])
+
+
+def test_voice_steady_tone_has_flat_pitch():
+    v = delivery.voice_stats(_speech(_tone(2.5)), _RATE)
+    assert v["pitch_range_st"] < 0.5
+    assert v["voiced_s"] >= 8
+    assert v["trail_off_pct"] == 0
+
+
+def test_voice_glide_pitch_range():
+    v = delivery.voice_stats(_speech(_tone(2.5, 110, 220)), _RATE)
+    assert 8.5 <= v["pitch_range_st"] <= 10.5
+
+
+def test_voice_trailing_off_phrases():
+    v = delivery.voice_stats(_speech(_tone(2.5, fall=0.4)), _RATE)
+    assert v["trail_off_pct"] == 100
+
+
+def test_voice_too_little_speech_is_none():
+    assert delivery.voice_stats(_tone(3), _RATE) is None
+
+
+def test_voice_silence_and_noise_are_none():
+    assert delivery.voice_stats(np.zeros(_RATE * 12), _RATE) is None
+    noise = np.random.default_rng(0).normal(0, 0.1, _RATE * 12)
+    assert delivery.voice_stats(noise, _RATE) is None

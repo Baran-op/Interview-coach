@@ -297,7 +297,7 @@ dependency.
 
 **Phase H: energy and presence**
 
-- [ ] H1. 1a `delivery.voice_stats` with tests, and `scripts/voice_stats.py` (from 1b)
+- [x] H1. 1a `delivery.voice_stats` with tests, and `scripts/voice_stats.py` (from 1b)
 - [ ] H2. 1b Run the calibration on real answers; record thresholds below
 - [ ] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [ ] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json`
