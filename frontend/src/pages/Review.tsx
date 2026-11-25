@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chevron } from '../components/Dropdown'
 import { getRecordMode } from '../audio/recorder'
+import VoiceTab from '../voice/VoiceTab'
+import { stopAllVoice } from '../voice/engine'
 import { api, categoryLabel, reportCriteria, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type AnswerDelivery, type FaceFlag, type FaceMoment, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
 
 function clock(ms: number | null) {
@@ -12,9 +14,16 @@ function clock(ms: number | null) {
 interface Props {
   sessionId: string
   onStart: (pack: Pack) => void
+  /** From the hash: #/review/<id>?tab=voice&q=<answer index>. */
+  tab?: 'feedback' | 'voice'
+  q?: number | null
 }
 
-export default function Review({ sessionId, onStart }: Props) {
+/** Move between the tabs and questions by changing the hash (back button works, links can be shared). */
+const reviewHash = (id: string, tab: 'feedback' | 'voice', q: number | null) =>
+  `#/review/${id}${tab === 'voice' ? `?tab=voice${q != null ? `&q=${q}` : ''}` : ''}`
+
+export default function Review({ sessionId, onStart, tab = 'feedback', q = null }: Props) {
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +77,13 @@ export default function Review({ sessionId, onStart }: Props) {
       window.clearTimeout(timer)
     }
   }, [sessionId])
+
+  // Only one thing plays at a time: the recording on Feedback, the answer audio on Voice.
+  useEffect(() => {
+    if (tab === 'voice') video.current?.pause()
+    else stopAllVoice()
+  }, [tab])
+  useEffect(() => () => stopAllVoice(), [])
 
   const turns = session?.turns ?? []
   const timed = turns.some((t) => t.t_start_ms != null)
@@ -178,7 +194,33 @@ export default function Review({ sessionId, onStart }: Props) {
         </div>
       </div>
 
-      <section className="card">
+      <div className="tabs" role="tablist" aria-label="Review sections">
+        <a role="tab" aria-selected={tab === 'feedback'} className={`tab ${tab === 'feedback' ? 'on' : ''}`} href={reviewHash(sessionId, 'feedback', null)}>
+          Feedback
+        </a>
+        <a role="tab" aria-selected={tab === 'voice'} className={`tab ${tab === 'voice' ? 'on' : ''}`} href={reviewHash(sessionId, 'voice', q)}>
+          Voice
+        </a>
+      </div>
+
+      {tab === 'voice' && (
+        <div className="voice-panel">
+          <VoiceTab
+            session={session}
+            report={report}
+            q={q}
+            onSelect={(i) => {
+              window.location.hash = reviewHash(sessionId, 'voice', i)
+            }}
+            onRewrite={() => {
+              if (window.confirm('Write the report again? This uses 1 Claude request and scores may shift.')) void regenerate()
+            }}
+            onPlayStart={() => video.current?.pause()}
+          />
+        </div>
+      )}
+
+      <section className={`card ${tab === 'voice' ? 'is-hidden' : ''}`}>
         {session.has_recording ? (
           <div className="player">
             <video
@@ -188,6 +230,7 @@ export default function Review({ sessionId, onStart }: Props) {
               controls
               preload="metadata"
               onLoadedMetadata={onMetadata}
+              onPlay={stopAllVoice}
               onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration * 1000)}
               onTimeUpdate={(e) => setNowMs(e.currentTarget.currentTime * 1000)}
             />
@@ -250,7 +293,7 @@ export default function Review({ sessionId, onStart }: Props) {
         </details>
       </section>
 
-      <section className="card report">
+      <section className={`card report ${tab === 'voice' ? 'is-hidden' : ''}`}>
         <h2 className="section-title">Feedback</h2>
         {error && <div className="banner error">{error}</div>}
         {(!report || report.status === 'pending') && (
@@ -360,6 +403,11 @@ export default function Review({ sessionId, onStart }: Props) {
                     <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
                       Practise this question
                     </a>
+                    {a.question_turn != null && (
+                      <a className="button-link small" href={reviewHash(sessionId, 'voice', i)}>
+                        Voice ▸
+                      </a>
+                    )}
                   </div>
                   <div className="bars">
                     {criteria.map((c) => (
