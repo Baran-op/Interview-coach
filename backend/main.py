@@ -172,7 +172,8 @@ app = FastAPI(title="Interview Coach", lifespan=lifespan)
 # ---------------------------------------------------------------- models --- #
 
 class PackOptions(BaseModel):
-    interview_type: Literal["behavioural", "technical", "mixed", "case"] = "mixed"
+    interview_type: Literal["behavioural", "technical", "mixed", "case", "roleplay"] = "mixed"
+    stage: Literal["screen", "full", "final"] = "full"
     num_questions: int = Field(5, ge=1, le=20)
     minutes: int | None = Field(None, ge=5, le=120)
     difficulty: Literal["easy", "medium", "hard"] = "medium"

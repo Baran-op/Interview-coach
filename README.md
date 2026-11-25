@@ -150,7 +150,7 @@ minute.
 ### Packs and history
 
 - An **interview pack** is a saved role: the job description, your CV, company notes and
-  options (type, length, difficulty, style, interviewer name, voice). You can run the same
+  options (type, stage, length, difficulty, style, interviewer name, voice). You can run the same
   pack as often as you like.
 - **Length** is either a number of main questions or a number of minutes. In a timed
   interview the timer shows `elapsed / total`. Each of your answers reaches the interviewer

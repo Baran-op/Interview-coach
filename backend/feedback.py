@@ -94,6 +94,7 @@ def _system_prompt(pack: dict, previous_fixes: list[str] | None = None) -> str:
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
         "type": opts.get("interview_type") or "mixed",
+        "stage": opts.get("stage") or "full",
         "difficulty": opts.get("difficulty") or "medium",
         "jd": pack.get("jd") or "(not provided)",
         "profile": pack.get("profile") or "(not provided)",

@@ -11,6 +11,7 @@ const EMPTY: PackInput = {
   company_notes: '',
   options: {
     interview_type: 'mixed',
+    stage: 'full',
     num_questions: 5,
     minutes: null,
     difficulty: 'medium',
@@ -31,7 +32,7 @@ function voiceLabel(id: string) {
 export function packSummary(p: Pack) {
   const o = p.options
   const length = o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`
-  return `${o.interview_type} · ${length} · ${o.difficulty} · ${o.style}`
+  return `${o.stage ?? 'full'} · ${o.interview_type} · ${length} · ${o.difficulty} · ${o.style}`
 }
 
 interface Props {
@@ -186,6 +187,15 @@ export default function Setup({ onStart, editPackId }: Props) {
               <option value="technical">Technical</option>
               <option value="mixed">Mixed</option>
               <option value="case">Case</option>
+              <option value="roleplay">Role-play</option>
+            </select>
+          </label>
+          <label>
+            Stage
+            <select value={form.options.stage} onChange={(e) => setOpt('stage', e.target.value as PackInput['options']['stage'])}>
+              <option value="screen">Screening call</option>
+              <option value="full">Full interview</option>
+              <option value="final">Final round</option>
             </select>
           </label>
           <label>

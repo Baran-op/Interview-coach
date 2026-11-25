@@ -47,7 +47,7 @@ A session has three screens: Setup, Interview and Review.
    - Paste or upload the job description (text or PDF)
    - My profile: CV text, saved once and reused, editable per session
    - Company notes: free text (mission, products, recent news, values)
-   - Options: interview type (behavioural, technical, mixed, case), length (number of questions or minutes), difficulty, interviewer style (friendly, neutral, tough)
+   - Options: interview type (behavioural, technical, mixed, case, roleplay), stage (screening call, full, final round; default full), length (number of questions or minutes), difficulty, interviewer style (friendly, neutral, tough)
    - Saved as a reusable "interview pack" so I can re-run the same role
 2. **Interview screen**
    - The 3D interviewer greets me, then asks one question at a time with lip-sync and expressions

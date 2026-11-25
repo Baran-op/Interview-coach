@@ -105,6 +105,31 @@ def time_note(opts: dict, started_at_ms: int, now_ms: int) -> str:
     return f"(Time: {used} of {minutes} min used.) "
 
 
+STAGES = {
+    "screen": (
+        "This is a first-round screening call with a recruiter, about 15 to 20 minutes. Keep it light. "
+        "After the opening and \"tell me about yourself\", cover: motivation, why they are looking to move now, "
+        "what they are looking for in their next role, salary expectations, notice period and availability. "
+        "Then ask only two or three light competency questions as the main questions, with few follow-ups, "
+        "and finish with the candidate's questions. Do not go deep technically."
+    ),
+    "full": (
+        "This is a full interview with the hiring manager. Follow the shape below as written."
+    ),
+    "final": (
+        "This is a final-round conversation with a senior leader or founder. Go deep on motivation and values, "
+        "what they would do in their first 90 days, why they should be chosen over the other candidates, and "
+        "where they want to be in a few years. Use fewer, broader main questions and push on the reasoning "
+        "behind their answers rather than on technical detail."
+    ),
+}
+
+
+def stage_block(opts: dict) -> str:
+    """Text for the {stage} slot; packs saved before stages existed count as a full interview."""
+    return STAGES.get(opts.get("stage") or "full", STAGES["full"])
+
+
 FIRST_SESSION_NOTE = "(This is the candidate's first session for this role.)"
 
 
@@ -152,6 +177,7 @@ def build_system_prompt(pack: dict, history: list[dict] | None = None) -> str:
         "profile": pack.get("profile") or "(not provided)",
         "company_notes": pack.get("company_notes") or "(none)",
         "type": opts.get("interview_type") or "mixed",
+        "stage": stage_block(opts),
         "history": history_block(history),
         "n": opts.get("num_questions") or 5,
         "difficulty": opts.get("difficulty") or "medium",

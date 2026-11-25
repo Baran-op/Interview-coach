@@ -1,9 +1,11 @@
-export type InterviewType = 'behavioural' | 'technical' | 'mixed' | 'case'
+export type InterviewType = 'behavioural' | 'technical' | 'mixed' | 'case' | 'roleplay'
+export type Stage = 'screen' | 'full' | 'final'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type Style = 'friendly' | 'neutral' | 'tough'
 
 export interface PackOptions {
   interview_type: InterviewType
+  stage: Stage
   num_questions: number
   minutes: number | null
   difficulty: Difficulty
