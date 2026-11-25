@@ -214,7 +214,7 @@ sentence can play while Claude is still writing the rest:
 ```
 {"type":"session","session_id":"…"}                          /sessions only
 {"type":"transcript","text":"…","stt_ms":412,"turn_idx":1}    /turn only
-{"type":"sentence","index":0,"text":"…","expressions":[{"tag":"smile","char_index":0}],
+{"type":"sentence","index":0,"turn_idx":2,"text":"…","expressions":[{"tag":"smile","char_index":0}],
  "audio_wav_base64":"…","duration_ms":2280,"word_timings":[{"word":"Hi","start_ms":0,"end_ms":228}],"tts_error":null}
 {"type":"done","turn_idx":2,"reply_text":"…","expressions":[…],"is_final":false,"timings":{"first_sentence_ms":1650,"total_ms":2900}}
 {"type":"error","message":"…"}                                instead of done
