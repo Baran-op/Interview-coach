@@ -474,7 +474,7 @@ rows.
       ≥ 2 s split, caps).
 - [x] V3 (script built, calibration awaits user; thresholds still provisional). Calibration: you record 12 Drill answers; `scripts.voice_windows` gives clips, a CSV and agreement
       scores; set the constants (about 12 Claude requests).
-- [ ] V4. Word timestamps for every spoken turn, filled before the report call; timing measured; Drill words
+- [x] V4. Word timestamps for every spoken turn, filled before the report call; timing measured; Drill words
       gathered alongside scoring.
 - [ ] V5. Usual-range baseline keys (`center_hz`, `p10_st`, `p90_st`, `window_range_st`) plus backfill.
 - [ ] V6. Voice evidence in the transcript, `{voice_rules}` slot, `voice_advice` schema, `normalise`

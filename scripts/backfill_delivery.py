@@ -3,9 +3,9 @@
     python -m scripts.backfill_delivery
 
 Every report's per-answer ``delivery`` is rebuilt from its transcript and ``data/answers/<session>/``;
-every drill attempt with audio gets its voice fields. Turns with speech segments and face data but no word
-offsets get them from Whisper (a few seconds per answer; skipped when mlx-whisper is missing), for the
-quotes under face moments. Face stats (from each turn's stored `face_json`) are
+every drill attempt with audio gets its voice fields. Spoken turns with a saved WAV but no word
+offsets get them from Whisper (about 5 s per 80 s answer; skipped when mlx-whisper is missing), for the
+quotes under face moments and flat stretches. Face stats (from each turn's stored `face_json`) are
 combined per answer, with flags and moments, in the same passes. Scores and text are left as they are. Runs in two
 passes so the voice baseline exists before any flags are set (PLAN-energy.md, 1c).
 """

@@ -115,6 +115,12 @@ def words_from_wav(wav_path) -> list[dict]:
 
     Measured on a 41 s clip, word timestamps add about 0.75 s to a transcription (1 s per minute), over the
     0.5 s budget, so this runs in the report step from the saved WAVs instead of inside `transcribe`.
+
+    Measured again for PLAN-voice.md V4 (M-series Mac, warm model, your three saved answers): 5.2 s for a
+    61 s clip, 5.8 s for an 80 s clip (the first call, with the model load, took 9 s for 82 s), about 0.07 s
+    per second of audio. Every spoken turn of a 12-answer session at 80 s each is therefore about 65 s added to
+    the report step, over V4's 45 s guard: the prefetch fallback in the plan is not built, and the wait is
+    the cost of word offsets for every turn.
     """
     audio = wav_to_float32(open(wav_path, "rb").read())
     if len(audio) < SAMPLE_RATE * 0.3:

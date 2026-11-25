@@ -337,19 +337,23 @@ def session_brief(session: dict) -> dict | None:
     return json.loads(session["brief_json"]) if session.get("brief_json") else None
 
 
-def turns_needing_words(turns: list[dict]) -> list[dict]:
-    """Spoken turns with face data and speech segments (so a quote is possible) but no word offsets yet."""
-    return [t for t in turns if t["speaker"] == "candidate" and t.get("segments") and t.get("face") and t.get("words") is None]
+def turns_needing_words(turns: list[dict], audio_dir=None) -> list[dict]:
+    """Spoken candidate turns with no word offsets yet (PLAN-voice.md, V4): every turn with a saved WAV.
+
+    Face data and segments are no longer needed (segments only matter for session-clock labels). With
+    ``audio_dir`` (the session's ``<idx>.wav`` folder) a turn without its file is left out, which skips typed
+    answers; without it every candidate turn that has no words counts.
+    """
+    return [t for t in turns if t["speaker"] == "candidate" and t.get("words") is None
+            and (audio_dir is None or (Path(audio_dir) / f"{t['idx']}.wav").exists())]
 
 
 async def _fill_words(session_id: str, turns: list[dict]) -> None:
-    """Word offsets from the saved WAVs, on the MLX thread, for the quotes under face moments. Never fails the report."""
+    """Word offsets from the saved WAVs, on the MLX thread, before the report request. Never fails the report."""
     from . import gpu, stt
 
-    for t in turns_needing_words(turns):
+    for t in turns_needing_words(turns, db.ANSWERS_DIR / session_id):
         path = db.ANSWERS_DIR / session_id / f"{t['idx']}.wav"
-        if not path.exists():
-            continue
         try:
             t["words"] = await gpu.run(stt.words_from_wav, path)
             db.set_turn_words(session_id, t["idx"], t["words"])
@@ -370,9 +374,9 @@ async def generate(session_id: str) -> None:
         earlier = db.pack_report_history(session["pack_id"], limit=1, before=session["started_at"])
         fixes = earlier[0]["top_fixes"] if earlier else []
         brief = session_brief(session)  # the brief the session ran with, so a later edit never re-scores it
+        await _fill_words(session_id, turns)  # before the request: the voice evidence quotes these words (V4)
         raw = await _ask_claude(_system_prompt(pack, fixes, brief), _transcript(turns), report_schema(brief))
         report = normalise(raw, turns, brief)
-        await _fill_words(session_id, turns)
         from . import delivery  # imported here: delivery imports this module
 
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
