@@ -204,22 +204,35 @@ def to_semitones(f0_hz, center_hz: float) -> np.ndarray:
     return np.where(np.abs(st) <= 12, st, np.nan)
 
 
-def _pitch_range_st(x: np.ndarray, rate: int, voiced: np.ndarray) -> float | None:
-    f0 = _f0_track(x, rate, voiced)
+def _pitch_summary(f0: np.ndarray) -> dict | None:
+    """Pitch range, usual centre and band of one answer's pitched frames (None under 10 usable frames).
+
+    ``range`` is the 10th-90th percentile spread in semitones from the answer's median f0 (today's
+    ``pitch_range_st``); ``center_hz`` is that median; ``p10`` and ``p90`` are the band edges in semitones from it.
+    """
     f0 = f0[~np.isnan(f0)]
     if len(f0) < 10:
         return None
-    st = to_semitones(f0, float(np.median(f0)))
+    center = float(np.median(f0))
+    st = to_semitones(f0, center)
     st = st[~np.isnan(st)]
     if len(st) < 10:
         return None
-    return float(np.percentile(st, 90) - np.percentile(st, 10))
+    p10, p90 = float(np.percentile(st, 10)), float(np.percentile(st, 90))
+    return {"range": p90 - p10, "center_hz": center, "p10": p10, "p90": p90}
+
+
+def _pitch_range_st(x: np.ndarray, rate: int, voiced: np.ndarray) -> float | None:
+    p = _pitch_summary(_f0_track(x, rate, voiced))
+    return p["range"] if p else None
 
 
 def voice_stats(samples, rate: int) -> dict | None:
     """Pitch range, loudness range, trailing off and speaking time from mono float samples.
 
-    ``pitch_range_st`` and ``loudness_range_db`` are 10th-90th percentile spreads (semitones, dB);
+    ``pitch_range_st`` and ``loudness_range_db`` are 10th-90th percentile spreads (semitones, dB); ``center_hz``,
+    ``p10_st``, ``p90_st`` (the pitch band around the answer's median) and ``window_range_st`` (median 10 s window
+    spread, None under 12 s) feed the Voice tab (PLAN-voice.md V5);
     ``trail_off_pct`` is the share of phrases (1 s+, split at 250 ms gaps) whose last 300 ms is 6 dB
     or more under the rest. None below 8 s of voiced speech. ``pitch_range_st`` and ``trail_off_pct``
     can be None when there's nothing to measure.
@@ -252,16 +265,25 @@ def voice_stats(samples, rate: int) -> dict | None:
         tail = 20 * np.log10(max(float(np.sqrt((seg[-_TAIL_FRAMES:] ** 2).mean())), 1e-6))
         rest = float(np.median(db[a : b + 1 - _TAIL_FRAMES]))
         trail.append(tail <= rest - _TRAIL_DB)
-    pitch = _pitch_range_st(x, rate, raw)
+    f0 = _f0_track(x, rate, raw)
+    pitch = _pitch_summary(f0)
+    from . import voice  # imported here: voice imports this module
+
+    windows = voice.window_spreads({"f0_hz": f0, "voiced": raw}) if pitch else []
     return {
-        "pitch_range_st": round(pitch, 2) if pitch is not None else None,
+        "pitch_range_st": round(pitch["range"], 2) if pitch else None,
         "loudness_range_db": round(loud, 1),
         "trail_off_pct": round(100 * sum(trail) / len(trail)) if trail else None,
         "voiced_s": round(voiced_s, 1),
+        # PLAN-voice.md V5: your usual band (semitones from this answer's median) and the median 10 s window spread
+        "center_hz": round(pitch["center_hz"], 1) if pitch else None,
+        "p10_st": round(pitch["p10"], 2) + 0.0 if pitch else None,
+        "p90_st": round(pitch["p90"], 2) + 0.0 if pitch else None,
+        "window_range_st": round(float(np.median([w["spread_st"] for w in windows])), 2) if windows else None,
     }
 
 
-VOICE_KEYS = ("pitch_range_st", "loudness_range_db", "trail_off_pct")
+VOICE_KEYS = ("pitch_range_st", "loudness_range_db", "trail_off_pct", "center_hz", "p10_st", "p90_st", "window_range_st")
 _FLAT_NO_BASELINE_ST = 4.0
 VOICE_FLAG_LABEL = {"flat": "flat", "lively": "lively", "trailing": "trailing off"}
 

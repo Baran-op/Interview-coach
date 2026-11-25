@@ -587,8 +587,8 @@ def voice_baseline(limit: int = 40, exclude_session: str | None = None, exclude_
     if len(voices) < VOICE_BASELINE_MIN:
         return None
     out = {}
-    for k in ("pitch_range_st", "loudness_range_db", "trail_off_pct"):
-        vals = [v[k] for v in voices if v.get(k) is not None]
+    for k in ("pitch_range_st", "loudness_range_db", "trail_off_pct", "center_hz", "p10_st", "p90_st", "window_range_st"):
+        vals = [v[k] for v in voices if v.get(k) is not None]  # older reports lack the V5 keys: skipped
         out[k] = round(statistics.median(vals), 2) if vals else None
     return out
 

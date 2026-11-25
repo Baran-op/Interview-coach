@@ -151,7 +151,12 @@ def test_voice_baseline(tmp_path, monkeypatch):
     db.add_attempt("a9", pack["id"], "k", "q", None, "x", 10, None, {"delivery": {"voice": {"pitch_range_st": 8.0}}})
     b = db.voice_baseline()
     assert b["pitch_range_st"] == 8.0 and b["loudness_range_db"] == 10.0 and b["trail_off_pct"] is None
+    assert b["center_hz"] is None and b["window_range_st"] is None  # older answers lack the V5 keys: skipped, not zero
     assert db.voice_baseline(exclude_attempt="a9") is None
+    db.add_attempt("v5", pack["id"], "k", "q", None, "x", 10, None, {"delivery": {"voice": {
+        "pitch_range_st": 5.0, "center_hz": 110.0, "p10_st": -2.0, "p90_st": 3.0, "window_range_st": 3.5}}})
+    b = db.voice_baseline()
+    assert (b["center_hz"], b["p10_st"], b["p90_st"], b["window_range_st"]) == (110.0, -2.0, 3.0, 3.5)
 
 
 def _face(frames=100, on=80.0, down=5.0, expr=4.0, found=100.0, spans=(), windows=(), t0=0, t1=60000):

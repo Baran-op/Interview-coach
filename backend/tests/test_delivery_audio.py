@@ -138,13 +138,36 @@ def test_voice_silence_and_noise_are_none():
 
 # --- V0: today's voice_stats, pinned exactly (PLAN-voice.md). A pitch-code refactor must not move these. ---
 
+def _old_keys(v):
+    return {k: v[k] for k in ("pitch_range_st", "loudness_range_db", "trail_off_pct", "voiced_s")}
+
+
 def test_voice_stats_pinned_numbers():
     octave = np.concatenate([_speech(_tone(2.5, 150), 2), _speech(_tone(2.5, 300), 2)])
-    assert delivery.voice_stats(_speech(_tone(2.5)), _RATE) == {
+    assert _old_keys(delivery.voice_stats(_speech(_tone(2.5)), _RATE)) == {
         "pitch_range_st": 0.0, "loudness_range_db": 0.0, "trail_off_pct": 0, "voiced_s": 10.1}
-    assert delivery.voice_stats(_speech(_tone(2.5, 110, 220)), _RATE) == {
+    assert _old_keys(delivery.voice_stats(_speech(_tone(2.5, 110, 220)), _RATE)) == {
         "pitch_range_st": 9.36, "loudness_range_db": 0.3, "trail_off_pct": 0, "voiced_s": 10.1}
-    assert delivery.voice_stats(_speech(_tone(2.5, fall=0.4)), _RATE) == {
+    assert _old_keys(delivery.voice_stats(_speech(_tone(2.5, fall=0.4)), _RATE)) == {
         "pitch_range_st": 0.0, "loudness_range_db": 4.0, "trail_off_pct": 100, "voiced_s": 10.1}
-    assert delivery.voice_stats(octave, _RATE) == {
+    assert _old_keys(delivery.voice_stats(octave, _RATE)) == {
         "pitch_range_st": 12.0, "loudness_range_db": 0.0, "trail_off_pct": 0, "voiced_s": 10.1}
+
+
+def test_voice_stats_usual_band_keys():
+    v = delivery.voice_stats(_speech(_tone(2.5, 150), 6), _RATE)  # 18 s: long enough for 10 s windows
+    assert abs(v["center_hz"] - 150) < 2
+    assert v["p10_st"] == 0.0 and v["p90_st"] == 0.0 and v["window_range_st"] == 0.0
+    g = delivery.voice_stats(_speech(_tone(2.5, 110, 220), 6), _RATE)
+    assert g["p10_st"] < 0 < g["p90_st"] and abs((g["p90_st"] - g["p10_st"]) - g["pitch_range_st"]) < 0.02
+    assert 100 < g["center_hz"] < 240 and g["window_range_st"] is not None
+    short = delivery.voice_stats(_speech(_tone(2.5), 4, gap=0.4), _RATE)  # 11.6 s of audio: under 12 s, no windows
+    assert short["window_range_st"] is None and short["center_hz"] is not None
+
+
+def test_voice_usual_carries_new_keys_and_baseline_skips_old_reports():
+    base = {"pitch_range_st": 5.0, "loudness_range_db": 12.0, "trail_off_pct": 4, "center_hz": 120.0, "p10_st": -2.5,
+            "p90_st": 2.5, "window_range_st": 3.0}
+    out = delivery.voice_fields({"pitch_range_st": 3.0}, base)
+    assert out["voice_usual"] == base
+    assert delivery.voice_fields({"pitch_range_st": 3.0}, {"pitch_range_st": 5.0})["voice_usual"]["center_hz"] is None
