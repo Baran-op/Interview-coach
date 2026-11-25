@@ -77,7 +77,7 @@ still bleed into your answer.
 
 ## Using it
 
-1. On **Setup**, paste the job description, your CV and any company notes, then choose
+1. On **Setup**, paste (or upload as .txt, .md or .pdf) the job description, your CV and any company notes, then choose
    the type, number of questions, difficulty, style, interviewer name and **voice**
    (US or UK English, female or male).
 2. Click **Save pack & start interview**. Chrome asks for the microphone the first time.
@@ -190,6 +190,7 @@ those words automatically.
 |---|---|---|
 | GET | `/health` | Claude auth plus the Whisper/Kokoro load state. 503 if `ANTHROPIC_API_KEY` is set or the token is missing |
 | GET | `/voices` | Kokoro voices offered in Setup |
+| POST | `/extract-text` | Multipart `file` (PDF, max 10 MB): returns `{text, chars}` for the Setup upload buttons |
 | POST | `/packs` | Create a pack |
 | GET | `/packs`, `/packs/{id}` | List or load packs |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |

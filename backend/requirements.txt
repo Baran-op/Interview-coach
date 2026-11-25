@@ -18,3 +18,4 @@ spacy
 num2words
 phonemizer           # only imported; espeak-ng itself is not required
 espeakng-loader      # bundles espeak-ng; misaki.espeak (imported by mlx-audio's Kokoro) needs it
+pypdf                # reads uploaded PDFs (CV, job description)

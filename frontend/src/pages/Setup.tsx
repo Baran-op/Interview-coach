@@ -82,11 +82,13 @@ export default function Setup({ onStart, editPackId }: Props) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (file.name.toLowerCase().endsWith('.pdf')) {
-      setError('PDF upload is not supported yet: paste the text for now.')
-      return
+    setError(null)
+    try {
+      const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf'
+      set(key, isPdf ? await api.extractPdfText(file) : await file.text())
+    } catch (err) {
+      setError((err as Error).message)
     }
-    set(key, await file.text())
   }
 
   const editPack = (p: Pack) => {

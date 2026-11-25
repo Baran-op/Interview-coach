@@ -328,6 +328,36 @@ async def voices():
     return {"default": tts.DEFAULT_VOICE, "voices": tts.VOICES}
 
 
+MAX_PDF_BYTES = 10 * 1024 * 1024
+
+
+def _pdf_text(data: bytes) -> str:
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(BytesIO(data))
+    if reader.is_encrypted and not reader.decrypt(""):
+        raise ValueError("The PDF is password protected")
+    pages = [re.sub(r"[ \t]+\n", "\n", p.extract_text() or "").strip() for p in reader.pages]
+    return re.sub(r"\n{3,}", "\n\n", "\n\n".join(p for p in pages if p)).strip()
+
+
+@app.post("/extract-text")
+async def extract_text(file: UploadFile):
+    """Text of an uploaded PDF, to fill the job description / CV fields."""
+    data = await file.read(MAX_PDF_BYTES + 1)
+    if len(data) > MAX_PDF_BYTES:
+        raise HTTPException(413, "The PDF is larger than 10 MB")
+    try:
+        text = await asyncio.to_thread(_pdf_text, data)
+    except Exception as exc:
+        raise HTTPException(422, f"Could not read the PDF: {exc}")
+    if not text:
+        raise HTTPException(422, "No text found in the PDF (is it a scan?). Paste the text instead.")
+    return {"text": text, "chars": len(text)}
+
+
 @app.post("/packs")
 async def create_pack(pack: PackIn):
     return db.create_pack(pack.model_dump())

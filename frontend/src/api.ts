@@ -208,6 +208,13 @@ export const api = {
     if (!res.ok && res.status !== 503) throw new Error('Backend not reachable on :8000')
     return res.json()
   },
+  extractPdfText: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/extract-text', { method: 'POST', body: form })
+    if (!res.ok) throw await errorFrom(res)
+    return ((await res.json()) as { text: string }).text
+  },
   listPacks: () => request<Pack[]>('/packs'),
   getPack: (id: string) => request<Pack>(`/packs/${id}`),
   updatePack: (id: string, pack: PackInput) =>
