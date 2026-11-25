@@ -438,7 +438,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 **Phase A: fix the data the scores are based on**
 
-- [ ] A1. 0.1 Test harness
+- [x] A1. 0.1 Test harness
 - [x] A2. 6a Company notes in the report prompt
 - [ ] A3. 4a Whisper hint words from the CV, without sentence-start words
 - [ ] A4. 4b Save each answer's audio (starts collecting data for 4c)

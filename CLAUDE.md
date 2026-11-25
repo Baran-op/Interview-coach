@@ -44,6 +44,7 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
 source .venv/bin/activate && uvicorn backend.main:app --port 8000   # backend
 cd frontend && npm run dev                                          # frontend, http://localhost:5173
 cd frontend && npx tsc -b                                           # type-check frontend
+pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend unit tests (pure functions only)
 ```
 
 ## Conventions and gotchas
