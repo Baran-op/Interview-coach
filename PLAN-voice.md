@@ -467,7 +467,7 @@ rows.
 
 ## Build order
 
-- [ ] V0. Pin today's `voice_stats` numbers (synthetic tests, plus a real-WAV snapshot kept outside the repo).
+- [x] V0. Pin today's `voice_stats` numbers (synthetic tests, plus a real-WAV snapshot kept outside the repo).
 - [ ] V1. `delivery.pitch_track` (shared with `_pitch_range_st`), `to_semitones`, and `voice.py`
       WAV↔session mapping and joins.
 - [ ] V2. `voice.flat_sections` (10 s window, 2.5 s hop, ≥ 60 pitched frames, provisional thresholds, joins

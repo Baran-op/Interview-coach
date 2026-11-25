@@ -134,3 +134,17 @@ def test_voice_silence_and_noise_are_none():
     assert delivery.voice_stats(np.zeros(_RATE * 12), _RATE) is None
     noise = np.random.default_rng(0).normal(0, 0.1, _RATE * 12)
     assert delivery.voice_stats(noise, _RATE) is None
+
+
+# --- V0: today's voice_stats, pinned exactly (PLAN-voice.md). A pitch-code refactor must not move these. ---
+
+def test_voice_stats_pinned_numbers():
+    octave = np.concatenate([_speech(_tone(2.5, 150), 2), _speech(_tone(2.5, 300), 2)])
+    assert delivery.voice_stats(_speech(_tone(2.5)), _RATE) == {
+        "pitch_range_st": 0.0, "loudness_range_db": 0.0, "trail_off_pct": 0, "voiced_s": 10.1}
+    assert delivery.voice_stats(_speech(_tone(2.5, 110, 220)), _RATE) == {
+        "pitch_range_st": 9.36, "loudness_range_db": 0.3, "trail_off_pct": 0, "voiced_s": 10.1}
+    assert delivery.voice_stats(_speech(_tone(2.5, fall=0.4)), _RATE) == {
+        "pitch_range_st": 0.0, "loudness_range_db": 4.0, "trail_off_pct": 100, "voiced_s": 10.1}
+    assert delivery.voice_stats(octave, _RATE) == {
+        "pitch_range_st": 12.0, "loudness_range_db": 0.0, "trail_off_pct": 0, "voiced_s": 10.1}

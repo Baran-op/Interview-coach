@@ -9,6 +9,7 @@ the pitch range and check the low ones sound flat and the high ones lively.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -24,6 +25,7 @@ KEYS = ("pitch_range_st", "loudness_range_db", "trail_off_pct", "voiced_s")
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dir", default="data/answers", help="folder searched recursively for .wav files")
+    ap.add_argument("--json", metavar="FILE", help="also write {path: stats} for every measured WAV to FILE (a before/after snapshot)")
     args = ap.parse_args()
     rows = []
     skipped = 0
@@ -35,6 +37,8 @@ def main() -> None:
             continue
         rows.append((p, v))
         print(f"{str(p):60}" + "  ".join(f"{k}={v[k]}" for k in KEYS))
+    if args.json:
+        Path(args.json).write_text(json.dumps({str(p): v for p, v in rows}, indent=1, sort_keys=True), encoding="utf-8")
     print(f"\n{len(rows)} answers measured, {skipped} skipped (unreadable or under {delivery.MIN_VOICED_S:.0f} s voiced)")
     for k in KEYS:
         vals = [v[k] for _, v in rows if v[k] is not None]
