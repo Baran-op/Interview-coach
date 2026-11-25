@@ -298,7 +298,7 @@ dependency.
 **Phase H: energy and presence**
 
 - [x] H1. 1a `delivery.voice_stats` with tests, and `scripts/voice_stats.py` (from 1b)
-- [ ] H2. 1b Run the calibration on real answers; record thresholds below
+- [x] H2. 1b Run the calibration on real answers; record thresholds below (no per-answer WAVs existed yet: starting thresholds kept, rerun once data exists)
 - [ ] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [ ] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json`
 - [ ] H5. 2b Face stats in the report and Review, with timed moments on the recording
@@ -308,5 +308,22 @@ dependency.
 
 ## Calibration results
 
-(Filled in by H2: the distribution from `scripts/voice_stats.py`, the thresholds chosen, and
-whether loudness range stays in the UI.)
+H2 run (`python -m scripts.voice_stats`): **0 answers measured, 0 skipped.** `data/answers/` does not
+exist yet; `data/` holds only `interview.db` and two full-session recordings in `data/recordings/`
+(.webm, not per-answer WAVs). So there is no distribution (p10, median and p90 are all unavailable).
+
+Decisions, because the data is far below the ~10 answers needed:
+
+- Keep the starting thresholds from 1c: `flat` under 0.75 x your usual (4 st with no baseline),
+  `lively` over 1.25 x your usual, `trailing` at 40% or more and 15 points over your usual.
+- Loudness range stays in for now. With no data there is no evidence either way on the auto-gain
+  caveat, so rerun this and drop it from the UI if its p10 to p90 spread is only a few dB.
+- No bug found in `voice_stats`; nothing could be exercised on real audio beyond the unit tests.
+
+Still to do by the user:
+
+1. Record some answers (Interview or Drill) so `data/answers/` fills up, until there are 10 or more.
+2. Rerun `python -m scripts.voice_stats` and paste the p10 / median / p90 per number here.
+3. By-ear check: listen to 2-3 WAVs at each end of the pitch range (the script prints each file's
+   `pitch_range_st`; take the lowest and highest ones), confirm the low ones sound flat and the high
+   ones lively, then adjust the thresholds above. Not done: it cannot be done without the audio.
