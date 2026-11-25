@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chevron } from '../components/Dropdown'
 import { getRecordMode } from '../audio/recorder'
-import { api, CATEGORY_LABEL, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type AnswerDelivery, type FaceFlag, type FaceMoment, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
-
-const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
-const LABEL: Record<Criterion, string> = {
-  relevance: 'Relevance',
-  structure: 'Structure',
-  specificity: 'Specificity',
-  evidence: 'Evidence',
-}
+import { api, categoryLabel, reportCriteria, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type AnswerDelivery, type FaceFlag, type FaceMoment, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
 
 function clock(ms: number | null) {
   if (ms == null) return ''
@@ -45,8 +37,12 @@ export default function Review({ sessionId, onStart }: Props) {
     api
       .packHistory(packId)
       .then((h) => {
-        const earlier = h.filter((s) => s.started_at < session.started_at && s.overall_score != null && s.criteria && !s.partial)
-        setIsPartial(h.find((s) => s.id === session.id)?.partial ?? false)
+        const me = h.find((s) => s.id === session.id)
+        // Only sessions scored with the same criteria are comparable ("vs last session").
+        const earlier = h.filter(
+          (s) => s.started_at < session.started_at && s.overall_score != null && s.criteria && !s.partial && (!me || s.criteria_hash === me.criteria_hash),
+        )
+        setIsPartial(me?.partial ?? false)
         setPrevious(earlier[earlier.length - 1] ?? null)
       })
       .catch(() => {})
@@ -132,6 +128,7 @@ export default function Review({ sessionId, onStart }: Props) {
 
   const pack = session.pack
   const r = report?.report
+  const criteria = reportCriteria(r)
   const allMoments = (report?.report?.answers ?? []).flatMap((a) => a.delivery?.face?.moments ?? [])
   const timelineMs = duration || (session.ended_at ? session.ended_at - session.started_at : 0)
   const avatarNote = getRecordMode() === 'avatar'
@@ -337,13 +334,13 @@ export default function Review({ sessionId, onStart }: Props) {
             <h3>Your answers</h3>
             {r.answers.map((a, i) => {
               const at = turnTime(a.question_turn)
-              const avg = CRITERIA.reduce((n, c) => n + a.scores[c], 0) / CRITERIA.length
+              const avg = criteria.reduce((n, c) => n + (a.scores[c.key] ?? 0), 0) / criteria.length
               return (
                 <details key={i} className="answer disclosure" open={i === 0 || undefined}>
                   <summary>
                     <span className="answer-n">{i + 1}</span>
                     <strong className="answer-title">{a.question}</strong>
-                    <span className="score-chip" title="Average of the four criteria">
+                    <span className="score-chip" title={`Average of the ${criteria.length} criteria`}>
                       {avg.toFixed(1)}
                     </span>
                     <Chevron />
@@ -351,7 +348,7 @@ export default function Review({ sessionId, onStart }: Props) {
                   <div className="answer-tools">
                     {a.category && (
                       <span className="chip" title={a.competency || undefined}>
-                        {CATEGORY_LABEL[a.category] ?? a.category}
+                        {categoryLabel(a.category, r)}
                         {a.competency ? ` · ${a.competency}` : ''}
                       </span>
                     )}
@@ -365,8 +362,8 @@ export default function Review({ sessionId, onStart }: Props) {
                     </a>
                   </div>
                   <div className="bars">
-                    {CRITERIA.map((c) => (
-                      <FragmentBar key={c} label={LABEL[c]} value={a.scores[c]} />
+                    {criteria.map((c) => (
+                      <FragmentBar key={c.key} label={c.name} value={a.scores[c.key] ?? 0} />
                     ))}
                   </div>
                   {a.delivery && <DeliveryLine d={a.delivery} />}
@@ -418,7 +415,7 @@ function Delta({ label, now, before }: { label: string; now: number; before: num
 
 /** Change since the previous attempt at the same pack. */
 function Comparison({ report, previous }: { report: NonNullable<ReportResponse['report']>; previous: HistorySession }) {
-  const avg = (c: Criterion) => report.answers.reduce((n, a) => n + a.scores[c], 0) / report.answers.length
+  const avg = (c: string) => report.answers.reduce((n, a) => n + (a.scores[c] ?? 0), 0) / report.answers.length
   return (
     <div className="compare">
       <div className="muted small">
@@ -427,9 +424,9 @@ function Comparison({ report, previous }: { report: NonNullable<ReportResponse['
       </div>
       <div className="deltas">
         <Delta label="Overall" now={report.overall_score} before={previous.overall_score!} />
-        {CRITERIA.map((c) => (
-          <Delta key={c} label={LABEL[c]} now={avg(c)} before={previous.criteria![c]} />
-        ))}
+        {reportCriteria(report).map((c) =>
+          previous.criteria?.[c.key] != null ? <Delta key={c.key} label={c.name} now={avg(c.key)} before={previous.criteria[c.key]!} /> : null,
+        )}
         {previous.filler_count != null && (
           <span>
             Fillers {report.filler_words.count} (was {previous.filler_count})

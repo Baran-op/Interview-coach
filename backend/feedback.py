@@ -12,12 +12,13 @@ import os
 import re
 from pathlib import Path
 
+from . import brief as brief_mod
 from . import claude_json, db, materials
-from .categories import CATEGORIES, clean_competency, resolve_category
+from .categories import clean_competency, resolve_category
 
 log = logging.getLogger("interview-coach.feedback")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-CRITERIA = ("relevance", "structure", "specificity", "evidence")
+CRITERIA = ("relevance", "structure", "specificity", "evidence")  # the default brief's; a session's come from its brief
 
 
 class FeedbackError(RuntimeError):
@@ -88,19 +89,21 @@ def previous_fixes_text(fixes: list[str] | None) -> str:
     return "\n".join(f"{i}. {f}" for i, f in enumerate(fixes, 1))
 
 
-def _system_prompt(pack: dict, previous_fixes: list[str] | None = None) -> str:
+def _system_prompt(pack: dict, previous_fixes: list[str] | None = None, brief: dict | None = None) -> str:
+    """The report prompt. `brief` is the session's brief snapshot; None is the default brief, which
+    renders today's prompt exactly (raw JD / CV / notes and the standard rubric)."""
     opts = pack.get("options") or {}
-    slots = materials.legacy_slots(pack)
+    context = (brief_mod.legacy_context(materials.legacy_slots(pack)) if brief is None
+               else brief_mod.scoring_context(brief))
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
         "type": opts.get("interview_type") or "mixed",
         "stage": opts.get("stage") or "full",
         "difficulty": opts.get("difficulty") or "medium",
-        "jd": slots["jd"] or "(not provided)",
-        "profile": slots["profile"] or "(not provided)",
-        "company_notes": slots["company_notes"] or "(not provided)",
+        "context": context,
         "previous_fixes": previous_fixes_text(previous_fixes),
+        **brief_mod.scoring_values(brief),
     }
     text = (PROMPTS_DIR / "feedback.txt").read_text(encoding="utf-8")
     for k, v in values.items():
@@ -109,52 +112,64 @@ def _system_prompt(pack: dict, previous_fixes: list[str] | None = None) -> str:
 
 
 
-_ANSWER_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "question_turn": {"type": "integer"},
-        "question": {"type": "string"},
-        "category": {"type": "string", "enum": list(CATEGORIES)},
-        "competency": {"type": "string"},
-        "answer_summary": {"type": "string"},
-        "scores": {
-            "type": "object",
-            "properties": {c: {"type": "integer", "minimum": 1, "maximum": 5} for c in CRITERIA},
-            "required": list(CRITERIA),
-        },
-        "better_answer": {"type": "string"},
-        "tips": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["question_turn", "question", "answer_summary", "scores", "better_answer", "tips"],
-}
-REPORT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "summary": {"type": "string"},
-        "answers": {"type": "array", "items": _ANSWER_SCHEMA},
-        "top_fixes": {"type": "array", "items": {"type": "string"}},
-        "previous_fixes": {
-            "type": "array",
-            "items": {
+def report_schema(brief: dict | None = None) -> dict:
+    """The report's JSON schema for a brief's criteria and categories (None: the default brief, today's schema)."""
+    criteria, categories = brief_mod.criteria_keys(brief), brief_mod.category_keys(brief)
+    answer = {
+        "type": "object",
+        "properties": {
+            "question_turn": {"type": "integer"},
+            "question": {"type": "string"},
+            "category": {"type": "string", "enum": categories},
+            "competency": {"type": "string"},
+            "answer_summary": {"type": "string"},
+            "scores": {
                 "type": "object",
-                "properties": {
-                    "fix": {"type": "string"},
-                    "status": {"type": "string", "enum": list(FIX_STATUSES)},
-                    "evidence": {"type": "string"},
+                "properties": {c: {"type": "integer", "minimum": 1, "maximum": 5} for c in criteria},
+                "required": criteria,
+            },
+            "better_answer": {"type": "string"},
+            "tips": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["question_turn", "question", "answer_summary", "scores", "better_answer", "tips"],
+    }
+    if brief and brief["format"]["kind"] == "stations":
+        answer["properties"]["station"] = {"type": "string", "enum": [st["key"] for st in brief["format"]["stations"]]}
+    return _report_schema(answer)
+
+
+def _report_schema(answer: dict) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "answers": {"type": "array", "items": answer},
+            "top_fixes": {"type": "array", "items": {"type": "string"}},
+            "previous_fixes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "fix": {"type": "string"},
+                        "status": {"type": "string", "enum": list(FIX_STATUSES)},
+                        "evidence": {"type": "string"},
+                    },
+                    "required": ["fix", "status"],
                 },
-                "required": ["fix", "status"],
             },
         },
-    },
-    "required": ["summary", "answers", "top_fixes"],
-}
+        "required": ["summary", "answers", "top_fixes"],
+    }
 
 
-async def _ask_claude(system_prompt: str, transcript: str) -> dict:
+REPORT_SCHEMA = report_schema(None)
+
+
+async def _ask_claude(system_prompt: str, transcript: str, schema: dict | None = None) -> dict:
     model = os.environ.get("FEEDBACK_MODEL") or os.environ.get("INTERVIEWER_MODEL") or None
     prompt = f"Transcript:\n\n{transcript}\n\nReturn the feedback JSON now."
     try:
-        return await claude_json.ask_json(system_prompt, prompt, REPORT_SCHEMA, model)
+        return await claude_json.ask_json(system_prompt, prompt, schema or REPORT_SCHEMA, model)
     except claude_json.ClaudeJSONError as exc:
         raise FeedbackError(str(exc)) from exc
 
@@ -168,26 +183,34 @@ def _score(v) -> int:
         return 1
 
 
-def normalise(raw: dict, turns: list[dict]) -> dict:
-    """Coerce Claude's JSON into the report schema and add the local stats."""
+def normalise(raw: dict, turns: list[dict], brief: dict | None = None) -> dict:
+    """Coerce Claude's JSON into the report schema and add the local stats.
+
+    Scores the brief's criteria and resolves categories against its keys (None: the default brief).
+    The report carries the rubric it was scored with (`criteria`, `criteria_hash`, `categories`)."""
+    criteria, allowed = brief_mod.criteria_keys(brief), brief_mod.category_keys(brief)
+    stations = {st["key"] for st in (brief or {}).get("format", {}).get("stations") or []}
     answers = []
     for a in raw.get("answers") or []:
         if not isinstance(a, dict):
             continue
-        scores = {c: _score((a.get("scores") or {}).get(c)) for c in CRITERIA}
+        scores = {c: _score((a.get("scores") or {}).get(c)) for c in criteria}
         qt = a.get("question_turn")
         question = str(a.get("question") or "")
-        answers.append({
+        entry = {
             "question_turn": qt if isinstance(qt, int) else None,
             "question": question,
-            "category": resolve_category(a.get("category"), question),
+            "category": resolve_category(a.get("category"), question, allowed),
             "competency": clean_competency(a.get("competency")),
             "answer_summary": str(a.get("answer_summary") or ""),
             "scores": scores,
-            "average": round(sum(scores.values()) / len(CRITERIA), 1),
+            "average": round(sum(scores.values()) / len(criteria), 1),
             "better_answer": str(a.get("better_answer") or ""),
             "tips": [str(t) for t in (a.get("tips") or []) if t][:4],
-        })
+        }
+        if stations and a.get("station") in stations:
+            entry["station"] = a["station"]
+        answers.append(entry)
     if not answers:
         raise FeedbackError("The report had no scored answers")
     fixes = [str(f) for f in (raw.get("top_fixes") or []) if f][:3]
@@ -211,6 +234,7 @@ def normalise(raw: dict, turns: list[dict]) -> dict:
         "avg_answer_seconds": answer_seconds(turns),
         "top_fixes": fixes,
         "previous_fixes": previous[:3],
+        **brief_mod.stamp(brief),
     }
 
 
@@ -270,13 +294,13 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
     if report.get("avg_answer_seconds") is not None:
         out.append(f"- Average answer length: {report['avg_answer_seconds']} s")
     out += ["", "## Answers", ""]
+    criteria = brief_mod.report_rubric(report)["criteria"]
     for i, a in enumerate(report["answers"], 1):
         s = a["scores"]
         out += [
             f"### {i}. {a['question']}",
             "",
-            f"Relevance {s['relevance']}/5 · Structure {s['structure']}/5 · "
-            f"Specificity {s['specificity']}/5 · Evidence {s['evidence']}/5 (average {a['average']})",
+            " · ".join(f"{c['name']} {s.get(c['key'], '–')}/5" for c in criteria) + f" (average {a['average']})",
             "",
             f"**What you said:** {a['answer_summary']}",
             "",
@@ -303,6 +327,13 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
 
 
 # ---------------------------------------------------------------- entry --- #
+
+def session_brief(session: dict) -> dict | None:
+    """The session's brief snapshot (None: it ran with the default brief)."""
+    import json
+
+    return json.loads(session["brief_json"]) if session.get("brief_json") else None
+
 
 def turns_needing_words(turns: list[dict]) -> list[dict]:
     """Spoken turns with face data and speech segments (so a quote is possible) but no word offsets yet."""
@@ -336,14 +367,16 @@ async def generate(session_id: str) -> None:
             raise FeedbackError("There are no answers to score: the interview ended before you answered.")
         earlier = db.pack_report_history(session["pack_id"], limit=1, before=session["started_at"])
         fixes = earlier[0]["top_fixes"] if earlier else []
-        raw = await _ask_claude(_system_prompt(pack, fixes), _transcript(turns))
-        report = normalise(raw, turns)
+        brief = session_brief(session)  # the brief the session ran with, so a later edit never re-scores it
+        raw = await _ask_claude(_system_prompt(pack, fixes, brief), _transcript(turns), report_schema(brief))
+        report = normalise(raw, turns, brief)
         await _fill_words(session_id, turns)
         from . import delivery  # imported here: delivery imports this module
 
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
                                  db.voice_baseline(exclude_session=session_id),
-                                 db.face_baseline(exclude_session=session_id))
+                                 db.face_baseline(exclude_session=session_id),
+                                 targets=brief_mod.targets(report["categories"]))
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

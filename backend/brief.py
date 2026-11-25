@@ -434,6 +434,128 @@ def render_context(brief: dict) -> str:
     return "\n".join(lines)
 
 
+_NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def criteria_keys(brief: dict | None) -> list[str]:
+    return [c["key"] for c in (brief or default_brief())["criteria"]]
+
+
+def category_keys(brief: dict | None) -> list[str]:
+    return [c["key"] for c in (brief or default_brief())["categories"]]
+
+
+def targets(categories: list[dict]) -> dict[str, tuple[int, int]]:
+    """{category key: (min, max) seconds} for the categories that have a target answer length."""
+    return {c["key"]: tuple(c["target_seconds"]) for c in categories if c.get("target_seconds")}
+
+
+def legacy_context(slots: dict, notes_label: str = "Company notes (research the candidate was given)",
+                   notes_empty: str = "(not provided)") -> str:
+    """Today's JD / CV / company notes block (default mode only)."""
+    return (f"Job description:\n{slots['jd'] or '(not provided)'}\n\n"
+            f"Candidate profile (CV):\n{slots['profile'] or '(not provided)'}\n\n"
+            f"{notes_label}:\n{slots['company_notes'] or notes_empty}")
+
+
+def scoring_context(brief: dict) -> str:
+    """What the report, Drill and prep see of a generated brief: the interview, and the candidate facts."""
+    f = brief["format"]
+    head = brief["role"] or "the role"
+    if brief["organisation"]:
+        head += f" at {brief['organisation']}"
+    lines = [f"The interview: {head}" + (f" ({brief['field']})" if brief["field"] else "")
+             + (f". Level: {brief['level']}." if brief["level"] else ".")]
+    if f["summary"]:
+        lines.append(f"Format: {f['summary']}")
+    if brief["competencies"]:
+        lines.append("What it assesses: " + "; ".join(brief["competencies"]) + ".")
+    if brief["facts"]:
+        lines += ["", "Facts about the organisation (from the candidate's materials):"] + [f"- {x}" for x in brief["facts"]]
+    lines += ["", "Candidate facts (from their CV and other materials; the only facts about the candidate you may use):",
+              brief["candidate_facts"] or brief["candidate_summary"] or "(not provided)"]
+    return "\n".join(lines)
+
+
+def json_scores(brief: dict | None) -> str:
+    return "{" + ", ".join(f'"{k}": 3' for k in criteria_keys(brief)) + "}"
+
+
+def category_notes(categories: list[dict]) -> str:
+    return "".join(f"- {c['scoring_note']}\n" for c in categories if c.get("scoring_note"))
+
+
+def followup_criteria(brief: dict | None) -> str:
+    keys = criteria_keys(brief)
+    if "specificity" in keys and "evidence" in keys:
+        return "specificity and evidence"
+    return "the criteria about detail and evidence"
+
+
+def entries_rule(brief: dict | None) -> str:
+    """The report's rule for what gets an entry in "answers"."""
+    f = (brief or default_brief())["format"]
+    if f["kind"] == "stations":
+        return ('- Make one entry in "answers" per STATION the interview reached, in order. The interviewer opens each '
+                'station with a line such as "Station 2: ...". "question" is the station name and the first line of its '
+                'scenario, "category" is the station\'s category, "station" is the station key given in the list below, and '
+                '"question_turn" is the interviewer turn that opened it. Fold everything said in the station (the scenario, '
+                'follow-ups and answers) into its entry. A station that was not reached gets no entry; say so in "summary". '
+                'Skip the welcome and the close.' + (' Also judge the questions the candidate asked at the end, in "summary" '
+                                                      'only (not as an entry).' if f["candidate_questions"] else '')
+                + "\n  Stations: " + "; ".join(f"{s['key']} = {s['name']} ({s['category']}, {s['minutes']} min)" for s in f["stations"]) + ".")
+    out = '- Make one entry in "answers" per MAIN question the interviewer asked.'
+    if f["opening"]:
+        out += (' This includes the opening "tell me about yourself" and the "why this role / why this company" '
+                'question: score them like any other.')
+    else:
+        out += ' This includes the "why this role / why this company" question: score it like any other.'
+    out += (" Fold the interviewer's follow-up questions and the candidate's follow-up answers into that main question's "
+            "entry. Skip the greeting, small talk and the closing part.")
+    if f["candidate_questions"]:
+        out += ' Also judge the questions the candidate asked at the end, in "summary" only (not as an entry).'
+    return out
+
+
+def scoring_values(brief: dict | None) -> dict[str, str]:
+    """Slots shared by the report and drill prompts. `brief` None is the default brief (today's text)."""
+    b = brief or default_brief()
+    stations = b["format"]["kind"] == "stations"
+    example = "behavioural" if "behavioural" in category_keys(b) else category_keys(b)[0]
+    return {
+        "criteria_block": render_criteria(b["criteria"]),
+        "n_criteria": _NUMBER_WORDS.get(len(b["criteria"]), str(len(b["criteria"]))),
+        "json_scores": json_scores(b),
+        "category_sentence": category_sentence(b["categories"]),
+        "category_notes": category_notes(b["categories"]),
+        "entries_rule": entries_rule(b),
+        "followup_criteria": followup_criteria(b),
+        "example_category": example,
+        "station_field": '\n      "station": "station key",' if stations else "",
+        "turn_note": ('"question_turn" is the turn number of the interviewer line that opened the station.' if stations else
+                      '"question_turn" is the turn number of the interviewer line that asked the main question.'),
+    }
+
+
+def report_rubric(report: dict | None) -> dict:
+    """The rubric a report (or drill result) was scored with. Older ones carry none: the default
+    four criteria and eight categories. Every reader goes through here."""
+    r = report or {}
+    crit = r.get("criteria") or [{"key": c["key"], "name": c["name"]} for c in DEFAULT_CRITERIA]
+    cats = r.get("categories") or [{"key": c["key"], "label": c["label"], "target_seconds": c["target_seconds"]}
+                                   for c in DEFAULT_CATEGORIES]
+    return {"criteria": crit, "criteria_hash": r.get("criteria_hash") or DEFAULT_CRITERIA_HASH, "categories": cats}
+
+
+def stamp(brief: dict | None) -> dict:
+    """The rubric keys stored on each new report and drill attempt."""
+    b = brief or default_brief()
+    return {"criteria": [{"key": c["key"], "name": c["name"]} for c in b["criteria"]],
+            "criteria_hash": criteria_hash(b["criteria"]),
+            "categories": [{"key": c["key"], "label": c["label"], "target_seconds": c["target_seconds"]}
+                           for c in b["categories"]]}
+
+
 # ------------------------------------------------------------- generation --- #
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:

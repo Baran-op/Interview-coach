@@ -668,11 +668,12 @@ async def drill_attempt(pack_id: str, request: Request):
         seconds = None
     if seconds is not None and seconds <= 0:
         seconds = None
-    category = resolve_category(fields["category"], question)
+    current = (db.get_brief(pack_id) or {}).get("brief")  # drill scores with the pack's current brief
+    category = resolve_category(fields["category"], question, brief.category_keys(current))
     key = drill.question_key(question)
     previous = (db.list_attempts(pack_id, key) or [None])[-1]
     try:
-        result = await drill.score(pack, question, category, answer, seconds, previous)
+        result = await drill.score(pack, question, category, answer, seconds, previous, current)
     except drill.DrillError as exc:
         raise HTTPException(502, str(exc))
     attempt_id = db.new_attempt_id()
@@ -778,7 +779,8 @@ async def start_session(body: SessionIn):
         await brain.close()
         raise HTTPException(502, str(exc))
 
-    session_id = db.create_session(pack["id"])
+    record = db.get_brief(pack["id"])
+    session_id = db.create_session(pack["id"], record["brief"] if record else None)
     opts = pack.get("options") or {}
     live = LiveSession(
         brain=brain,

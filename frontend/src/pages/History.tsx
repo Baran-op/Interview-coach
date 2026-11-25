@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, CATEGORY_LABEL, type Criterion, type HistorySession, type Pack, type PackHistory } from '../api'
+import { api, CATEGORY_LABEL, DEFAULT_CRITERIA, type HistorySession, type Pack, type PackHistory } from '../api'
 import { Chevron } from '../components/Dropdown'
 import { packSummary } from './Setup'
 
-const CRITERIA: { key: Criterion; label: string }[] = [
-  { key: 'relevance', label: 'Relevance' },
-  { key: 'structure', label: 'Structure' },
-  { key: 'specificity', label: 'Specificity' },
-  { key: 'evidence', label: 'Evidence' },
-]
+/** A session's criteria as [key, name] pairs (the standard four for an unscored one). */
+const criteriaOf = (s: HistorySession | undefined): { key: string; label: string }[] =>
+  s?.criteria_names ? Object.entries(s.criteria_names).map(([key, label]) => ({ key, label })) : DEFAULT_CRITERIA.map((c) => ({ key: c.key, label: c.name }))
+const scoreCell = (s: HistorySession, key: string) => (s.criteria?.[key] != null ? s.criteria[key]!.toFixed(1) : '–')
 
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 const fmtDateTime = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -18,6 +16,12 @@ const fmtLen = (s: HistorySession) => {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 const TYPE_COLORS = ['#2f6fed', '#d9730d', '#1a9e6b', '#c2410c', '#8b5cf6', '#0e7490', '#b91c1c', '#64748b']
+const KNOWN_TYPES = Object.keys(CATEGORY_LABEL)
+/** Known categories keep their colour (fixed by their position in CATEGORY_LABEL); a brief's own are drawn muted and dashed. */
+const typeColor = (category: string) => (KNOWN_TYPES.includes(category) ? TYPE_COLORS[KNOWN_TYPES.indexOf(category) % TYPE_COLORS.length] : null)
+/** A category's label: the known label, else the one stored with a report. */
+const typeLabel = (category: string, sessions: HistorySession[]) =>
+  CATEGORY_LABEL[category] ?? sessions.find((s) => s.category_labels?.[category])?.category_labels[category] ?? category
 
 interface TypeStat {
   category: string
@@ -33,8 +37,8 @@ function typeStats(sessions: HistorySession[]): TypeStat[] {
       by.get(category)!.points.push({ s, value: v.average })
     }
   }
-  const order = Object.keys(CATEGORY_LABEL)
-  return [...by.values()].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category))
+  const rank = (c: string) => (KNOWN_TYPES.includes(c) ? KNOWN_TYPES.indexOf(c) : KNOWN_TYPES.length)
+  return [...by.values()].sort((a, b) => rank(a.category) - rank(b.category))
 }
 
 /** Type, answers, first, latest and best score for each question type. Partial sessions are excluded by the caller. */
@@ -61,7 +65,7 @@ function TypeTable({ sessions }: { sessions: HistorySession[] }) {
             const n = t.points.reduce((sum, p) => sum + (p.s.by_category[t.category]?.answers ?? 0), 0)
             return (
               <tr key={t.category}>
-                <td>{CATEGORY_LABEL[t.category] ?? t.category}</td>
+                <td>{typeLabel(t.category, sessions)}</td>
                 <td className="num">{n}</td>
                 <td className="num">{vals[0].toFixed(1)}</td>
                 <td className="num strong">{vals[vals.length - 1].toFixed(1)}</td>
@@ -131,7 +135,12 @@ export default function History({ onStart }: Props) {
           </p>
         </div>
       )}
-      {data.map(({ pack, sessions }) => {
+      {data.map(({ pack, sessions: all }) => {
+        // Only sessions scored with the latest session's criteria are compared; the rest are listed apart.
+        const latestHash = [...all].reverse().find((s) => s.criteria_hash)?.criteria_hash ?? null
+        const sessions = all.filter((s) => !s.criteria_hash || s.criteria_hash === latestHash)
+        const earlier = all.filter((s) => s.criteria_hash && s.criteria_hash !== latestHash)
+        const columns = criteriaOf([...sessions].reverse().find((s) => s.criteria_names))
         const scored = sessions.filter((s) => s.overall_score != null && !s.partial)
         const first = scored[0]?.overall_score ?? null
         const latest = scored[scored.length - 1]?.overall_score ?? null
@@ -157,16 +166,19 @@ export default function History({ onStart }: Props) {
                 <a className="button-link" href={`#/prep/${pack.id}`}>
                   Prep
                 </a>
+                <a className="button-link" href={`#/brief/${pack.id}`}>
+                  Brief
+                </a>
                 <a className="button-link" href={`#/edit/${pack.id}`}>
                   Edit
                 </a>
-                <button className="ghost" onClick={() => void deletePack(pack, sessions.length)}>
+                <button className="ghost" onClick={() => void deletePack(pack, all.length)}>
                   Delete
                 </button>
               </div>
             </div>
 
-            {sessions.length === 0 ? (
+            {all.length === 0 ? (
               <p className="muted">No finished sessions yet.</p>
             ) : (
               <>
@@ -178,7 +190,7 @@ export default function History({ onStart }: Props) {
                     <Stat label="since first session" value={signed(latest - first)} />
                   )}
                 </div>
-                {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} />}
+                {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} columns={columns} />}
                 <TypeTable sessions={scored} />
                 <DeliveryTable sessions={scored} />
                 <details className="disclosure plain" open>
@@ -197,7 +209,7 @@ export default function History({ onStart }: Props) {
                         <th scope="col" className="num">
                           Overall
                         </th>
-                        {CRITERIA.map((c) => (
+                        {columns.map((c) => (
                           <th key={c.key} scope="col" className="num">
                             {c.label}
                           </th>
@@ -226,9 +238,9 @@ export default function History({ onStart }: Props) {
                               </span>
                             )}
                           </td>
-                          {CRITERIA.map((c) => (
+                          {columns.map((c) => (
                             <td key={c.key} className="num">
-                              {s.criteria ? s.criteria[c.key].toFixed(1) : '–'}
+                              {scoreCell(s, c.key)}
                             </td>
                           ))}
                           <td className="num">{s.filler_count ?? '–'}</td>
@@ -245,12 +257,58 @@ export default function History({ onStart }: Props) {
                   </table>
                 </div>
                 </details>
+                {earlier.length > 0 && <EarlierTable sessions={earlier} onDelete={deleteSession} />}
               </>
             )}
           </section>
         )
       })}
     </div>
+  )
+}
+
+/** Sessions scored with earlier criteria: listed as they were, never in trends or comparisons. */
+function EarlierTable({ sessions, onDelete }: { sessions: HistorySession[]; onDelete: (s: HistorySession) => void }) {
+  return (
+    <details className="disclosure plain">
+      <summary>
+        <h3>Scored with earlier criteria</h3>
+        <span className="summary-meta muted small">{sessions.length} not compared</span>
+        <Chevron />
+      </summary>
+      <div className="table-wrap">
+        <table className="sessions">
+          <caption className="sr-only">Sessions scored with earlier criteria</caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col" className="num">
+                Overall
+              </th>
+              <th scope="col">Criteria</th>
+              <th scope="col">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...sessions].reverse().map((s) => (
+              <tr key={s.id}>
+                <td>{fmtDateTime(s.started_at)}</td>
+                <td className="num strong">{s.overall_score != null ? s.overall_score.toFixed(1) : '–'}</td>
+                <td className="small">{criteriaOf(s).map((c) => `${c.label} ${scoreCell(s, c.key)}`).join(' · ')}</td>
+                <td className="row-actions">
+                  <a href={`#/review/${s.id}`}>Review</a>
+                  <button className="ghost small" onClick={() => onDelete(s)} aria-label="Delete session">
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 
@@ -308,7 +366,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 /** Overall score per session (1-5), oldest to newest, with a hover tooltip. */
-function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
+function ScoreChart({ sessions, columns }: { sessions: HistorySession[]; columns: { key: string; label: string }[] }) {
   const [hover, setHover] = useState<number | null>(null)
   const [mode, setMode] = useState<'overall' | 'type'>('overall')
   // Draw at the container's real pixel width so text and marks keep their size.
@@ -384,20 +442,27 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
             ) : null,
           )}
           {mode === 'type' &&
-            types.map((t, ti) => {
-              const color = TYPE_COLORS[ti % TYPE_COLORS.length]
+            types.map((t) => {
+              const known = typeColor(t.category)
+              const color = known ?? 'var(--muted)'
+              const label = typeLabel(t.category, sessions)
               const tp = t.points.map((p) => ({ cx: tx(p.s), cy: y(p.value), ...p }))
               const lastP = tp[tp.length - 1]
               return (
                 <g key={t.category}>
-                  <path className="type-line" stroke={color} d={tp.map((p, i) => `${i ? 'L' : 'M'}${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')} />
+                  <path
+                    className="type-line"
+                    style={{ stroke: color }}
+                    strokeDasharray={known ? undefined : '5 4'}
+                    d={tp.map((p, i) => `${i ? 'L' : 'M'}${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')}
+                  />
                   {tp.map((p, i) => (
-                    <circle key={i} className="type-dot" fill={color} cx={p.cx} cy={p.cy} r={4}>
-                      <title>{`${CATEGORY_LABEL[t.category] ?? t.category}, ${fmtDateTime(p.s.started_at)}: ${p.value.toFixed(1)}`}</title>
+                    <circle key={i} className="type-dot" style={{ fill: color }} cx={p.cx} cy={p.cy} r={4}>
+                      <title>{`${label}, ${fmtDateTime(p.s.started_at)}: ${p.value.toFixed(1)}`}</title>
                     </circle>
                   ))}
-                  <text className="type-label" fill={color} x={lastP.cx + 9} y={lastP.cy} dy="0.35em">
-                    {CATEGORY_LABEL[t.category] ?? t.category}
+                  <text className="type-label" style={{ fill: color }} x={lastP.cx + 9} y={lastP.cy} dy="0.35em">
+                    {label}
                   </text>
                 </g>
               )
@@ -442,7 +507,7 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
             </div>
             {h.s.criteria && (
               <div className="small">
-                {CRITERIA.map((c) => `${c.label} ${h.s.criteria![c.key].toFixed(1)}`).join(' · ')}
+                {columns.map((c) => `${c.label} ${scoreCell(h.s, c.key)}`).join(' · ')}
               </div>
             )}
           </div>

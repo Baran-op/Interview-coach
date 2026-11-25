@@ -234,7 +234,49 @@ export const CATEGORY_LABEL: Record<string, string> = {
   other: 'Other',
 }
 
-export type Criterion = 'relevance' | 'structure' | 'specificity' | 'evidence'
+/** A criterion key: the standard four, or a brief's own. */
+export type Criterion = string
+
+export interface RubricCriterion {
+  key: string
+  name: string
+}
+export interface RubricCategory {
+  key: string
+  label: string
+  target_seconds: [number, number] | null
+}
+
+/** The rubric stored on reports and drill results since Phase I; older ones carry none and mean the standard four. */
+export interface Scored {
+  criteria?: RubricCriterion[]
+  criteria_hash?: string
+  categories?: RubricCategory[]
+}
+
+export const DEFAULT_CRITERIA: RubricCriterion[] = [
+  { key: 'relevance', name: 'Relevance' },
+  { key: 'structure', name: 'Structure' },
+  { key: 'specificity', name: 'Specificity' },
+  { key: 'evidence', name: 'Evidence' },
+]
+/** brief.DEFAULT_CRITERIA_HASH in the backend: what reports without a stored rubric were scored with. */
+export const DEFAULT_CRITERIA_HASH = '18e9488f346db144f25fb3fb5e79b9db254b1d34'
+
+/** The criteria a report or drill result was scored with (the standard four when it carries none). */
+export function reportCriteria(r: Scored | null | undefined): RubricCriterion[] {
+  return r?.criteria?.length ? r.criteria : DEFAULT_CRITERIA
+}
+
+/** Comparable criteria: equal hashes, with no stored hash meaning the standard four. */
+export function criteriaHash(r: { criteria_hash?: string | null } | null | undefined): string {
+  return r?.criteria_hash ?? DEFAULT_CRITERIA_HASH
+}
+
+/** A category's label: the known ones, else the report's own label, else the key. */
+export function categoryLabel(key: string, r?: Scored | null): string {
+  return r?.categories?.find((c) => c.key === key)?.label ?? CATEGORY_LABEL[key] ?? key
+}
 
 export interface VoiceStats {
   pitch_range_st: number | null
@@ -339,9 +381,11 @@ export interface AnswerFeedback {
   better_answer: string
   tips: string[]
   delivery?: AnswerDelivery
+  /** The station key, in a stations interview. */
+  station?: string
 }
 
-export interface Report {
+export interface Report extends Scored {
   overall_score: number
   summary: string
   answers: AnswerFeedback[]
@@ -366,7 +410,12 @@ export interface HistorySession {
   overall_score: number | null
   has_recording: number | boolean
   report_status: ReportStatus | null
-  criteria: Record<Criterion, number> | null
+  /** Average per criterion key; null for a criterion no answer was scored on. */
+  criteria: Record<Criterion, number | null> | null
+  criteria_hash: string | null
+  criteria_names: Record<Criterion, string> | null
+  /** Labels of the categories the report was scored with. */
+  category_labels: Record<string, string>
   filler_count: number | null
   avg_answer_seconds: number | null
   answers: number | null
@@ -417,7 +466,7 @@ export interface DrillQuestion {
   best: number | null
 }
 
-export interface DrillResult {
+export interface DrillResult extends Omit<Scored, 'categories'> {
   scores: Record<Criterion, number>
   average: number
   tips: string[]

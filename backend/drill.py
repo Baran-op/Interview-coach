@@ -12,8 +12,9 @@ import os
 import re
 from pathlib import Path
 
+from . import brief as brief_mod
 from . import claude_json, db, delivery, materials, prep
-from .feedback import CRITERIA, _score
+from .feedback import _score
 
 log = logging.getLogger("interview-coach.drill")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -106,30 +107,38 @@ def assemble_questions(pack: dict, reports: list[dict], attempts: list[dict],
 
 # ---------------------------------------------------------------- scoring --- #
 
-SCHEMA = {
-    "type": "object",
-    "properties": {
-        "scores": {
-            "type": "object",
-            "properties": {c: {"type": "integer", "minimum": 1, "maximum": 5} for c in CRITERIA},
-            "required": list(CRITERIA),
+def schema(brief: dict | None = None) -> dict:
+    """The scoring JSON schema for a brief's criteria (None: the default brief, today's schema)."""
+    criteria = brief_mod.criteria_keys(brief)
+    return {
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "object",
+                "properties": {c: {"type": "integer", "minimum": 1, "maximum": 5} for c in criteria},
+                "required": criteria,
+            },
+            "tips": {"type": "array", "items": {"type": "string"}},
+            "improved": {"type": "array", "items": {"type": "string"}},
+            "better_answer": {"type": "string"},
         },
-        "tips": {"type": "array", "items": {"type": "string"}},
-        "improved": {"type": "array", "items": {"type": "string"}},
-        "better_answer": {"type": "string"},
-    },
-    "required": ["scores", "tips", "improved", "better_answer"],
-}
+        "required": ["scores", "tips", "improved", "better_answer"],
+    }
 
 
-def system_prompt(pack: dict) -> str:
-    slots = materials.legacy_slots(pack)
+SCHEMA = schema(None)
+
+
+def system_prompt(pack: dict, brief: dict | None = None) -> str:
+    """`brief` is the pack's current brief; None renders today's prompt exactly."""
+    context = (brief_mod.legacy_context(materials.legacy_slots(pack)) if brief is None
+               else brief_mod.scoring_context(brief))
+    scoring = brief_mod.scoring_values(brief)
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
-        "jd": slots["jd"] or "(not provided)",
-        "profile": slots["profile"] or "(not provided)",
-        "company_notes": slots["company_notes"] or "(not provided)",
+        "context": context,
+        **{k: scoring[k] for k in ("criteria_block", "n_criteria", "json_scores")},
     }
     text = (PROMPTS_DIR / "drill.txt").read_text(encoding="utf-8")
     for k, v in values.items():
@@ -151,19 +160,23 @@ def user_prompt(question: str, category: str, answer: str, seconds: float | None
             "",
             f"Previous attempt ({_length(previous.get('seconds'), previous['answer_text'])}), "
             f"average {res.get('average')}, scores "
-            + ", ".join(f"{c} {scores.get(c)}" for c in CRITERIA) + ":",
+            + ", ".join(f"{c} {v}" for c, v in scores.items()) + ":",
             previous["answer_text"],
         ]
     parts += ["", "Return the scoring JSON now."]
     return "\n".join(parts)
 
 
-def build_result(raw: dict, answer: str, seconds: float | None) -> dict:
-    """Coerce Claude's JSON: clamp scores, average locally, attach local text stats."""
-    scores = {c: _score((raw.get("scores") or {}).get(c)) for c in CRITERIA}
+def build_result(raw: dict, answer: str, seconds: float | None, brief: dict | None = None) -> dict:
+    """Coerce Claude's JSON: clamp scores, average locally, attach local text stats and the rubric."""
+    criteria = brief_mod.criteria_keys(brief)
+    scores = {c: _score((raw.get("scores") or {}).get(c)) for c in criteria}
+    stamp = brief_mod.stamp(brief)
     return {
         "scores": scores,
-        "average": round(sum(scores.values()) / len(CRITERIA), 1),
+        "average": round(sum(scores.values()) / len(criteria), 1),
+        "criteria": stamp["criteria"],
+        "criteria_hash": stamp["criteria_hash"],
         "tips": [str(t) for t in (raw.get("tips") or []) if t][:4],
         "improved": [str(t) for t in (raw.get("improved") or []) if t][:4],
         "better_answer": str(raw.get("better_answer") or ""),
@@ -172,14 +185,15 @@ def build_result(raw: dict, answer: str, seconds: float | None) -> dict:
 
 
 async def score(pack: dict, question: str, category: str, answer: str,
-                seconds: float | None, previous: dict | None) -> dict:
+                seconds: float | None, previous: dict | None, brief: dict | None = None) -> dict:
+    """One Claude request, scored with the pack's current brief rubric (`brief`; None: the default)."""
     model = os.environ.get("FEEDBACK_MODEL") or os.environ.get("INTERVIEWER_MODEL") or None
     try:
         raw = await claude_json.ask_json(
-            system_prompt(pack), user_prompt(question, category, answer, seconds, previous), SCHEMA, model)
+            system_prompt(pack, brief), user_prompt(question, category, answer, seconds, previous), schema(brief), model)
     except claude_json.ClaudeJSONError as exc:
         raise DrillError(str(exc)) from exc
-    return build_result(raw, answer, seconds)
+    return build_result(raw, answer, seconds, brief)
 
 
 def questions_for_pack(pack: dict) -> list[dict]:

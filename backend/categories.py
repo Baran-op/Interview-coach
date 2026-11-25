@@ -21,10 +21,14 @@ def category_from_question(question: str) -> str:
     return "other"
 
 
-def resolve_category(category, question: str) -> str:
-    """A valid category as is (case-insensitive), otherwise the fallback from the question."""
+def resolve_category(category, question: str, allowed=CATEGORIES) -> str:
+    """A category in `allowed` as is (case-insensitive), otherwise a fallback: from the question text
+    when `allowed` has intro / motivation (the default categories do), else `other`."""
     c = str(category or "").strip().lower()
-    return c if c in CATEGORIES else category_from_question(question)
+    if c in allowed:
+        return c
+    guess = category_from_question(question)
+    return guess if guess in allowed else "other"
 
 
 def clean_competency(value) -> str:

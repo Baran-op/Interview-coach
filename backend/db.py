@@ -205,12 +205,14 @@ def _write_materials(conn: sqlite3.Connection, pack_id: str, items: list[dict]) 
 
 # ------------------------------------------------------------- sessions ---- #
 
-def create_session(pack_id: str) -> str:
+def create_session(pack_id: str, brief: dict | None = None) -> str:
+    """`brief` is the pack's brief at session start, snapshotted so later edits never re-score the session
+    (None: the default brief)."""
     session_id = uuid.uuid4().hex[:12]
     with connect() as conn:
         conn.execute(
-            "INSERT INTO sessions (id, pack_id, started_at) VALUES (?, ?, ?)",
-            (session_id, pack_id, _now_ms()),
+            "INSERT INTO sessions (id, pack_id, started_at, brief_json) VALUES (?, ?, ?, ?)",
+            (session_id, pack_id, _now_ms(), json.dumps(brief) if brief else None),
         )
     return session_id
 
@@ -342,8 +344,9 @@ def get_report(session_id: str) -> dict | None:
         return None
     d = dict(row)
     d["report"] = json.loads(d.pop("report_json")) if d.get("report_json") else None
+    allowed = _category_keys(d["report"])
     for a in (d["report"] or {}).get("answers") or []:  # older reports have no category
-        a["category"] = resolve_category(a.get("category"), a.get("question", ""))
+        a["category"] = resolve_category(a.get("category"), a.get("question", ""), allowed)
         a.setdefault("competency", "")
     return d
 
@@ -625,14 +628,19 @@ def is_partial(scored_answers: int | None) -> bool:
     return scored_answers is not None and scored_answers < MIN_SCORED_ANSWERS
 
 
-def category_averages(answers: list[dict]) -> dict[str, dict]:
+def _category_keys(report: dict | None) -> tuple[str, ...]:
+    return tuple(c["key"] for c in brief_mod.report_rubric(report)["categories"])
+
+
+def category_averages(answers: list[dict], allowed=None) -> dict[str, dict]:
     """Per category: {average, answers}. Older reports without a category fall back on the question text."""
+    allowed = allowed or _category_keys(None)
     groups: dict[str, list[float]] = {}
     for a in answers:
         avg = a.get("average")
         if avg is None:
             avg = sum(a["scores"].values()) / len(a["scores"])
-        groups.setdefault(resolve_category(a.get("category"), a.get("question", "")), []).append(avg)
+        groups.setdefault(resolve_category(a.get("category"), a.get("question", ""), allowed), []).append(avg)
     return {c: {"average": round(sum(v) / len(v), 2), "answers": len(v)} for c, v in groups.items()}
 
 
@@ -640,6 +648,9 @@ def _session_summary(row: sqlite3.Row) -> dict:
     d = dict(row)
     report = json.loads(d.pop("report_json")) if d.get("report_json") else None
     d["criteria"] = None
+    d["criteria_hash"] = None
+    d["criteria_names"] = None
+    d["category_labels"] = {}
     d["filler_count"] = None
     d["avg_answer_seconds"] = None
     d["answers"] = None
@@ -648,14 +659,19 @@ def _session_summary(row: sqlite3.Row) -> dict:
     d["delivery_trend"] = None
     if report and report.get("answers"):
         answers = report["answers"]
-        d["criteria"] = {
-            c: round(sum(a["scores"][c] for a in answers) / len(answers), 2) for c in CRITERIA
-        }
+        rubric = brief_mod.report_rubric(report)  # the report's own criteria, not a fixed list
+        d["criteria"] = {}
+        for c in rubric["criteria"]:
+            vals = [a["scores"][c["key"]] for a in answers if c["key"] in (a.get("scores") or {})]
+            d["criteria"][c["key"]] = round(sum(vals) / len(vals), 2) if vals else None
+        d["criteria_hash"] = rubric["criteria_hash"]
+        d["criteria_names"] = {c["key"]: c["name"] for c in rubric["criteria"]}
+        d["category_labels"] = {c["key"]: c["label"] for c in rubric["categories"]}
         d["filler_count"] = (report.get("filler_words") or {}).get("count")
         d["avg_answer_seconds"] = report.get("avg_answer_seconds")
         d["answers"] = len(answers)
         d["partial"] = is_partial(len(answers))
-        d["by_category"] = category_averages(answers)
+        d["by_category"] = category_averages(answers, _category_keys(report))
         from .delivery import session_delivery  # late: delivery imports feedback, which imports db
 
         d["delivery_trend"] = session_delivery(answers)
@@ -710,12 +726,13 @@ def pack_report_history(pack_id: str, limit: int = 3, before: int | None = None)
         answers = report.get("answers") or []
         if not answers or is_partial(len(answers)):
             continue
+        allowed = _category_keys(report)
         out.append({
             "started_at": row["started_at"],
             "answers": [
                 {
                     "question": a.get("question", ""),
-                    "category": resolve_category(a.get("category"), a.get("question", "")),
+                    "category": resolve_category(a.get("category"), a.get("question", ""), allowed),
                     "average": a.get("average") if a.get("average") is not None
                     else round(sum(a["scores"].values()) / len(a["scores"]), 1),
                 }

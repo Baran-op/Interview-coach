@@ -155,7 +155,7 @@ reports(session_id, report_json, report_md)
 attempts(id, pack_id, question_key, question, category, answer_text, seconds, audio_path, result_json, created_at)
 ```
 
-Report JSON: `{overall_score, summary, answers:[{question, answer_summary, scores:{relevance, structure, specificity, evidence}, better_answer, tips[]}], filler_words:{count, examples[]}, avg_answer_seconds, top_fixes[3]}`.
+Report JSON: `{overall_score, summary, answers:[{question, category, answer_summary, scores:{<criterion key>: 1-5}, better_answer, tips[], station?}], filler_words:{count, examples[]}, avg_answer_seconds, top_fixes[3], criteria:[{key, name}], criteria_hash, categories:[{key, label, target_seconds}]}`. The criteria are the session's brief's (the standard four: relevance, structure, specificity, evidence); reports from before Phase I carry no `criteria`/`categories` and mean the standard four and eight.
 
 ## Project structure and setup
 

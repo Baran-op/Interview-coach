@@ -1,18 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, CATEGORY_LABEL, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type Criterion, type FaceMoment, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
+import { api, categoryLabel, criteriaHash, reportCriteria, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type FaceMoment, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
 import { InterviewerPlayer, type Speaker } from '../audio/player'
 import { TurnListener, type SpeechSegment } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
 import { FaceTracker, faceModelAvailable, getFaceTracking } from '../face/FaceTracker'
-
-const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
-const LABEL: Record<Criterion, string> = {
-  relevance: 'Relevance',
-  structure: 'Structure',
-  specificity: 'Specificity',
-  evidence: 'Evidence',
-}
 
 interface Current {
   key: string
@@ -340,7 +332,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
                 />
               )}
               <h2>{current.question}</h2>
-              {current.category && <span className="chip">{CATEGORY_LABEL[current.category] ?? current.category}</span>}
+              {current.category && <span className="chip">{categoryLabel(current.category)}</span>}
               <div className="actions">
                 <button onClick={() => void playQuestion()} disabled={phase !== 'idle'}>
                   {phase === 'speaking' ? 'Speaking…' : 'Hear the question'}
@@ -384,13 +376,13 @@ export default function Drill({ packId, initialQuestion }: Props) {
                 <div className="drill-result">
                   <h3>
                     Score {fmt(result.attempt.result.average)}
-                    {result.previous?.result && (
+                    {result.previous?.result && criteriaHash(result.previous.result) === criteriaHash(result.attempt.result) && (
                       <span className="chip">{delta(result.attempt.result.average - result.previous.result.average)} since last time</span>
                     )}
                   </h3>
                   <div className="bars">
-                    {CRITERIA.map((c) => (
-                      <Bar key={c} label={LABEL[c]} value={result.attempt.result!.scores[c]} />
+                    {reportCriteria(result.attempt.result).map((c) => (
+                      <Bar key={c.key} label={c.name} value={result.attempt.result!.scores[c.key] ?? 0} />
                     ))}
                   </div>
                   {(result.attempt.result.delivery?.voice_flags?.length ?? 0) > 0 && (
@@ -468,14 +460,18 @@ export default function Drill({ packId, initialQuestion }: Props) {
                   <table className="small">
                     <tbody>
                       {attempts.map((a, i) => {
+                        // Only attempts scored with the latest attempt's criteria are compared.
+                        const latestHash = criteriaHash(attempts[attempts.length - 1].result)
+                        const comparable = criteriaHash(a.result) === latestHash
                         const avg = a.result?.average ?? null
-                        const prev = i > 0 ? (attempts[i - 1].result?.average ?? null) : null
+                        const before = attempts.slice(0, i).filter((b) => criteriaHash(b.result) === latestHash)
+                        const prev = comparable && before.length ? (before[before.length - 1].result?.average ?? null) : null
                         return (
-                          <tr key={a.id}>
+                          <tr key={a.id} className={comparable ? '' : 'earlier'}>
                             <td>{i + 1}</td>
                             <td>{new Date(a.created_at).toLocaleString()}</td>
                             <td>{fmt(avg)}</td>
-                            <td>{avg != null && prev != null ? delta(avg - prev) : ''}</td>
+                            <td>{!comparable ? 'earlier criteria' : avg != null && prev != null ? delta(avg - prev) : ''}</td>
                             <td title={voiceTooltip(a.result?.delivery ?? {}) || undefined}>
                               {a.result?.delivery?.voice?.pitch_range_st != null ? `${a.result.delivery.voice.pitch_range_st.toFixed(1)} st` : ''}
                             </td>

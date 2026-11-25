@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import db, delivery, feedback, stt  # noqa: E402
+from backend import brief, db, delivery, feedback, stt  # noqa: E402
 
 
 def _reports() -> list[tuple[dict, dict]]:
@@ -50,7 +50,8 @@ def main() -> None:
     for s, report in reports:
         turns = db.list_turns(s["id"])
         _fill_words(s["id"], turns)
-        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / s["id"])
+        targets = brief.targets(brief.report_rubric(report)["categories"])  # older reports: today's targets
+        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / s["id"], targets=targets)
         pack = db.get_pack(s["pack_id"]) or {}
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))
     for a in attempts:

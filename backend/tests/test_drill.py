@@ -83,15 +83,17 @@ def test_attempt_summaries_and_custom_questions():
 
 
 def test_prompts_in_step():
-    from backend.feedback import CRITERIA
+    """Both prompts get their criteria from the one shared renderer, for the default and for a brief."""
+    from backend import brief, feedback
+    from backend.tests.test_brief import _raw
 
-    text = (drill.PROMPTS_DIR / "drill.txt").read_text()
-    fb = (drill.PROMPTS_DIR / "feedback.txt").read_text()
-    for c in CRITERIA:
-        assert f"  - {c}:" in text
-    # the four criteria blocks (with anchors) are identical in both prompts
-    start, end = "  - relevance:", "- Be strict"
-    assert text[text.index(start):text.index(end)] == fb[fb.index(start):fb.index(end)]
+    for name in ("drill.txt", "feedback.txt"):
+        text = (drill.PROMPTS_DIR / name).read_text()
+        assert "{criteria_block}" in text and "{json_scores}" in text and "{n_criteria}" in text
+    for b in (None, brief.clean_brief(_raw())):
+        block = brief.render_criteria((b or brief.default_brief())["criteria"])
+        assert block in drill.system_prompt({"role": "R"}, b)
+        assert block in feedback._system_prompt({"role": "R"}, None, b)
     assert "{role}" not in drill.system_prompt({"role": "R"})
 
 

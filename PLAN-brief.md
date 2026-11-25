@@ -545,7 +545,7 @@ No new dependencies. No new local models.
       `BRIEF_MODEL`. Tests for cleaning, hashing and the default brief.
 - [x] I3. Brief page: sections, assumptions to confirm (answers fed to Regenerate), stale notice,
       Regenerate with its cost shown, freeze warning, "use the standard interview".
-- [ ] I4. Rubric from the brief: `render_criteria` shared by feedback and drill, dynamic schemas,
+- [x] I4. Rubric from the brief: `render_criteria` shared by feedback and drill, dynamic schemas,
       `sessions.brief_json` snapshot, criteria and categories stored on new reports and attempts,
       `report_rubric`, `_session_summary` fix, frontend rendering from the report, History and the
       Review delta comparing like criteria only, neutral style for unknown categories. Golden tests

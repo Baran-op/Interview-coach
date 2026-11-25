@@ -212,8 +212,14 @@ deletes the brief and goes back to today's standard interview.
     case, role-play, logistics, other) and a competency, shown as a chip on the Review page;
   - a collapsed "Delivery over time" table (median pitch range, trailing-off share and eye contact per session;
     partial sessions left out, a dash where a session has no voice or face data);
-  - a table of every session: overall score, the four criteria, filler words and average
+  - a table of every session: overall score, each criterion, filler words and average
     answer length.
+  - Each report and drill attempt stores the criteria and categories it was scored with. History, the
+    Review page's "compared with your previous attempt" and Drill's attempt list only compare sessions
+    scored with the same criteria as the latest one; older ones are listed under "Scored with earlier
+    criteria" (greyed out as "earlier criteria" in Drill). A brief's own question types are drawn as muted
+    dashed lines in the chart. Every session snapshots the brief it ran with, so editing the brief later
+    never changes how an old session is scored (Regenerate report uses the snapshot).
 
   From there you can **Run again**, **Edit** or **Delete** a pack, and open or delete
   sessions. Deleting also removes the recordings.
@@ -291,7 +297,7 @@ those words automatically.
 | POST | `/packs/{id}/brief` | Write or rewrite the brief from the materials (one Claude request, no tools). Body `{replace_criteria?: bool}`; on a frozen pack the criteria and categories are kept unless it is true. Your answers to the previous brief's questions are sent along |
 | PUT | `/packs/{id}/brief` | Save your edits (no Claude request). Body `{brief, fresh_start?: bool}`; 409 when the criteria or categories of a frozen pack change without `fresh_start: true` |
 | DELETE | `/packs/{id}/brief` | Back to the standard interview (the default brief) |
-| GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
+| GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores (`criteria`, plus `criteria_hash`, `criteria_names` and `category_labels` from each report's own rubric), fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
 | GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale}`; `stale` is true when the JD, CV or company notes changed since it was written |

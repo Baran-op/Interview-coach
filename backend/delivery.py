@@ -488,7 +488,7 @@ def answer_turns(answer: dict, answers: list[dict], turns: list[dict]) -> list[d
 
 
 def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None,
-                    face_baseline: dict | None = None) -> None:
+                    face_baseline: dict | None = None, targets: dict | None = None) -> None:
     """Add a ``delivery`` object to each answer (in place).
 
     An answer covers the candidate turns after its ``question_turn`` and before the next
@@ -496,7 +496,9 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
     with no audio, ``pauses_over_1s`` stays None and ``voice`` is None. ``voice_baseline`` is
     ``db.voice_baseline()``: your usual voice numbers, used for the voice flags.
     ``face_baseline`` is ``db.face_baseline()``; each answer's turns' ``face`` stats are combined into ``delivery.face``.
+    ``targets`` ({category: (min, max) seconds}) come from the report's categories; None is ``TARGET_SECONDS``.
     """
+    targets = TARGET_SECONDS if targets is None else targets
     starts = sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int))
     for a in answers:
         qt = a.get("question_turn")
@@ -520,7 +522,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
         voice = None
         if audio_dir is not None:
             voice = voice_from_wavs(Path(audio_dir) / f"{t['idx']}.wav" for t in mine)
-        target = TARGET_SECONDS.get(a.get("category"))
+        target = targets.get(a.get("category"))
         flag = None
         if target:
             flag = "short" if first < target[0] else "long" if first > target[1] else None

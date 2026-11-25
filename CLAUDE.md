@@ -60,7 +60,7 @@ python -m backend.tests.golden.make                                 # regenerate
 - `ANTHROPIC_API_KEY` must NOT be set; the backend refuses to start (would bill API instead of the plan).
   Auth is the Claude Code login (`claude login`, browser flow); `CLAUDE_CODE_OAUTH_TOKEN` in `.env` is an optional override.
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
-- `prompts/interviewer.txt` scripts the whole interview (its `{stage}` block comes from `STAGES` in `brain.py`: screen/full/final, old packs default to full): intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list), and keep the criteria and anchors in `prompts/drill.txt` identical to `feedback.txt` (a test checks this).
+- `prompts/interviewer.txt` scripts the whole interview (its `{stage}` block comes from `STAGES` in `brain.py`: screen/full/final, old packs default to full): intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list). The criteria and anchors in `prompts/feedback.txt` and `prompts/drill.txt` both come from `brief.render_criteria` (a test checks this).
 - Session history: `db.pack_report_history` feeds `brain.history_block` (`{history}` in `interviewer.txt`); `feedback._system_prompt` gets the previous session's fixes (`{previous_fixes}`) and the report carries `previous_fixes` statuses. Keep the two prompt files in step.
 - Face tracking (Phase H): numbers only, never send or store video frames, never label emotions in UI text. Off when the model is missing, the Setup toggle (`localStorage.faceTracking`) is off, or there is no camera in the recording. Drill opens its own camera (self-view) only when the toggle is on and the model exists, and stops it on leaving the page.
 - Keep all avatar interaction going through `AvatarController.say()`.
@@ -72,6 +72,15 @@ python -m backend.tests.golden.make                                 # regenerate
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `RESEARCH_MODEL`, `BRIEF_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
 - Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper. Ending early asks Score / Discard / Keep going; Discard sends `/end` with `score:false` then `DELETE /sessions/{id}`; the beacon and reaper always score.
   The Interview page keeps the recording blob in memory and `saveSession()` is retryable (Retry / Download buttons).
+- Rubric (Phase I4): reports and drill results store `criteria`, `criteria_hash` and (reports) `categories`;
+  read them only through `brief.report_rubric(report)`, which gives the default four/eight for older ones (nothing is
+  migrated). `feedback.txt`/`drill.txt` render their criteria, categories and context from `brief.scoring_values` /
+  `scoring_context` (default brief: `legacy_context`, byte-identical). Sessions snapshot their brief in
+  `sessions.brief_json` at start (`feedback.session_brief`); the report and `scripts/rescore` score with it. A pack's
+  rubric freezes once it has a ready report (`db.frozen_rubric`): PUT 409s without `fresh_start`, POST keeps it unless
+  `replace_criteria`. History/Review/Drill compare only equal `criteria_hash` (`DEFAULT_CRITERIA_HASH` is mirrored in
+  `frontend/src/api.ts`; a test checks it). `categories.resolve_category(..., allowed)` falls back to `other` when
+  intro/motivation aren't allowed; `delivery.answer_delivery(targets=...)` reads the report's category targets.
 - Golden prompts: `backend/tests/golden/` holds today's rendered interviewer/feedback/drill/prep prompts and the
   report/drill JSON schemas for two fictional packs (`fixtures.py`); `test_golden.py` compares byte for byte. With no
   brief nothing may change; regenerate with `python -m backend.tests.golden.make` only when a change is intended.
