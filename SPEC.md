@@ -161,6 +161,7 @@ interview-coach/
     stt.py             # mlx-whisper wrapper
     tts.py             # Kokoro wrapper + word timings
     feedback.py        # report generation
+    claude_json.py     # ask_json(): schema-checked JSON via the SDK output_format
     db.py              # SQLite helpers
     prompts/           # interviewer.txt, feedback.txt
     requirements.txt

@@ -44,7 +44,7 @@ Sizes are relative: **XS** a few lines or a prompt tweak, **S** one module or pr
 
 ### 0.2 Schema-checked JSON from Claude (S, spike first)
 
-The report, drill scoring (1) and the prep sheet (7) all need JSON. `feedback._extract_json` parses
+The report, drill scoring (1) and the prep sheet (7) all need JSON. `feedback._extract_json` parsed
 free text, and every field this plan adds is another chance for a malformed reply.
 
 - Spike: call `query()` with `output_format={"type": "json_schema", "schema": {...}}` and the
@@ -447,7 +447,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 **Phase B: progress you can trust**
 
-- [ ] B1. 0.2 Schema-checked JSON (spike; skip if it doesn't work)
+- [x] B1. 0.2 Schema-checked JSON (spike worked: `output_format` json_schema with `max_turns=1` returns `structured_output`)
 - [x] B2. 3a Score or discard on early end
 - [x] B3. 3b Partial sessions
 - [ ] B4. 3c Question categories

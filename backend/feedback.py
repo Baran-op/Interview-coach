@@ -7,15 +7,12 @@ here so they are consistent from one session to the next.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 from pathlib import Path
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
-
-from . import db
+from . import claude_json, db
 
 log = logging.getLogger("interview-coach.feedback")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -98,37 +95,41 @@ def _system_prompt(pack: dict) -> str:
     return text
 
 
-def _extract_json(text: str) -> dict:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise FeedbackError("Claude did not return JSON")
-    try:
-        return json.loads(text[start:end + 1])
-    except json.JSONDecodeError as exc:
-        raise FeedbackError(f"Claude returned invalid JSON: {exc}") from exc
+
+_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "question_turn": {"type": "integer"},
+        "question": {"type": "string"},
+        "answer_summary": {"type": "string"},
+        "scores": {
+            "type": "object",
+            "properties": {c: {"type": "integer", "minimum": 1, "maximum": 5} for c in CRITERIA},
+            "required": list(CRITERIA),
+        },
+        "better_answer": {"type": "string"},
+        "tips": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["question_turn", "question", "answer_summary", "scores", "better_answer", "tips"],
+}
+REPORT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "answers": {"type": "array", "items": _ANSWER_SCHEMA},
+        "top_fixes": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "answers", "top_fixes"],
+}
 
 
 async def _ask_claude(system_prompt: str, transcript: str) -> dict:
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        tools=[],
-        allowed_tools=[],
-        max_turns=1,
-        setting_sources=[],
-        model=os.environ.get("FEEDBACK_MODEL") or os.environ.get("INTERVIEWER_MODEL") or None,
-    )
+    model = os.environ.get("FEEDBACK_MODEL") or os.environ.get("INTERVIEWER_MODEL") or None
     prompt = f"Transcript:\n\n{transcript}\n\nReturn the feedback JSON now."
-    parts: list[str] = []
-    async for msg in query(prompt=prompt, options=options):
-        if isinstance(msg, AssistantMessage):
-            if msg.error:
-                raise FeedbackError(f"Claude error: {msg.error}")
-            parts.extend(b.text for b in msg.content if isinstance(b, TextBlock))
-        elif isinstance(msg, ResultMessage) and msg.is_error:
-            raise FeedbackError(f"Claude returned an error ({msg.result or msg.subtype})")
-    return _extract_json("".join(parts))
+    try:
+        return await claude_json.ask_json(system_prompt, prompt, REPORT_SCHEMA, model)
+    except claude_json.ClaudeJSONError as exc:
+        raise FeedbackError(str(exc)) from exc
 
 
 # ------------------------------------------------------------ normalising --- #
