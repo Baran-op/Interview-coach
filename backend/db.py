@@ -9,6 +9,8 @@ import time
 import uuid
 from pathlib import Path
 
+from .categories import resolve_category
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "interview.db"
 ANSWERS_DIR = DATA_DIR / "answers"  # <session_id>/<turn_idx>.wav, one per spoken answer
@@ -238,6 +240,9 @@ def get_report(session_id: str) -> dict | None:
         return None
     d = dict(row)
     d["report"] = json.loads(d.pop("report_json")) if d.get("report_json") else None
+    for a in (d["report"] or {}).get("answers") or []:  # older reports have no category
+        a["category"] = resolve_category(a.get("category"), a.get("question", ""))
+        a.setdefault("competency", "")
     return d
 
 
@@ -305,6 +310,17 @@ def is_partial(scored_answers: int | None) -> bool:
     return scored_answers is not None and scored_answers < MIN_SCORED_ANSWERS
 
 
+def category_averages(answers: list[dict]) -> dict[str, dict]:
+    """Per category: {average, answers}. Older reports without a category fall back on the question text."""
+    groups: dict[str, list[float]] = {}
+    for a in answers:
+        avg = a.get("average")
+        if avg is None:
+            avg = sum(a["scores"].values()) / len(a["scores"])
+        groups.setdefault(resolve_category(a.get("category"), a.get("question", "")), []).append(avg)
+    return {c: {"average": round(sum(v) / len(v), 2), "answers": len(v)} for c, v in groups.items()}
+
+
 def _session_summary(row: sqlite3.Row) -> dict:
     d = dict(row)
     report = json.loads(d.pop("report_json")) if d.get("report_json") else None
@@ -313,6 +329,7 @@ def _session_summary(row: sqlite3.Row) -> dict:
     d["avg_answer_seconds"] = None
     d["answers"] = None
     d["partial"] = False
+    d["by_category"] = {}
     if report and report.get("answers"):
         answers = report["answers"]
         d["criteria"] = {
@@ -322,6 +339,7 @@ def _session_summary(row: sqlite3.Row) -> dict:
         d["avg_answer_seconds"] = report.get("avg_answer_seconds")
         d["answers"] = len(answers)
         d["partial"] = is_partial(len(answers))
+        d["by_category"] = category_averages(answers)
     return d
 
 

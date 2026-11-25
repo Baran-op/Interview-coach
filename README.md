@@ -159,7 +159,10 @@ minute.
   - your number of sessions, latest and best score, and change since the first session
     (sessions with fewer than 3 scored answers are marked "partial" and left out of these stats);
   - a chart of the overall score per session (hover for the per-criterion breakdown,
-    click a point to open that review);
+    click a point to open that review), which can switch to one line per question type;
+  - a "By question type" table (type, answers, first, latest and best score; partial sessions
+    left out). Each scored answer carries a category (intro, motivation, behavioural, technical,
+    case, role-play, logistics, other) and a competency, shown as a chip on the Review page;
   - a table of every session: overall score, the four criteria, filler words and average
     answer length.
 

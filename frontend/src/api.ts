@@ -104,11 +104,24 @@ export interface SessionListItem {
   report_status: ReportStatus | null
 }
 
+export const CATEGORY_LABEL: Record<string, string> = {
+  intro: 'Intro',
+  motivation: 'Motivation',
+  behavioural: 'Behavioural',
+  technical: 'Technical',
+  case: 'Case',
+  roleplay: 'Role-play',
+  logistics: 'Logistics',
+  other: 'Other',
+}
+
 export type Criterion = 'relevance' | 'structure' | 'specificity' | 'evidence'
 
 export interface AnswerFeedback {
   question_turn: number | null
   question: string
+  category: string
+  competency: string
   answer_summary: string
   scores: Record<Criterion, number>
   average: number
@@ -145,6 +158,7 @@ export interface HistorySession {
   avg_answer_seconds: number | null
   answers: number | null
   partial: boolean
+  by_category: Record<string, { average: number; answers: number }>
 }
 
 export interface PackHistory {

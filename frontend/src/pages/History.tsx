@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type Criterion, type HistorySession, type Pack, type PackHistory } from '../api'
+import { api, CATEGORY_LABEL, type Criterion, type HistorySession, type Pack, type PackHistory } from '../api'
 import { packSummary } from './Setup'
 
 const CRITERIA: { key: Criterion; label: string }[] = [
@@ -16,6 +16,64 @@ const fmtLen = (s: HistorySession) => {
   const sec = Math.round((s.ended_at - s.started_at) / 1000)
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
+const TYPE_COLORS = ['#2f6fed', '#d9730d', '#1a9e6b', '#c2410c', '#8b5cf6', '#0e7490', '#b91c1c', '#64748b']
+
+interface TypeStat {
+  category: string
+  points: { s: HistorySession; value: number }[]
+}
+
+/** Per question type, the sessions that had it, oldest first. Callers pass counted (non-partial) sessions only. */
+function typeStats(sessions: HistorySession[]): TypeStat[] {
+  const by = new Map<string, TypeStat>()
+  for (const s of sessions) {
+    for (const [category, v] of Object.entries(s.by_category ?? {})) {
+      if (!by.has(category)) by.set(category, { category, points: [] })
+      by.get(category)!.points.push({ s, value: v.average })
+    }
+  }
+  const order = Object.keys(CATEGORY_LABEL)
+  return [...by.values()].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category))
+}
+
+/** Type, answers, first, latest and best score for each question type. Partial sessions are excluded by the caller. */
+function TypeTable({ sessions }: { sessions: HistorySession[] }) {
+  const rows = typeStats(sessions)
+  if (!rows.length) return null
+  return (
+    <div className="type-table table-wrap">
+      <h3>By question type</h3>
+      <table className="sessions">
+        <caption className="sr-only">Scores by question type</caption>
+        <thead>
+          <tr>
+            <th scope="col">Type</th>
+            <th scope="col" className="num">Answers</th>
+            <th scope="col" className="num">First</th>
+            <th scope="col" className="num">Latest</th>
+            <th scope="col" className="num">Best</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t) => {
+            const vals = t.points.map((p) => p.value)
+            const n = t.points.reduce((sum, p) => sum + (p.s.by_category[t.category]?.answers ?? 0), 0)
+            return (
+              <tr key={t.category}>
+                <td>{CATEGORY_LABEL[t.category] ?? t.category}</td>
+                <td className="num">{n}</td>
+                <td className="num">{vals[0].toFixed(1)}</td>
+                <td className="num strong">{vals[vals.length - 1].toFixed(1)}</td>
+                <td className="num">{Math.max(...vals).toFixed(1)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(1)}`
 
 interface Props {
@@ -108,6 +166,7 @@ export default function History({ onStart }: Props) {
                   )}
                 </div>
                 {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} />}
+                <TypeTable sessions={scored} />
                 <div className="table-wrap">
                   <table className="sessions">
                     <caption className="sr-only">Sessions for {pack.title}</caption>
@@ -186,6 +245,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 /** Overall score per session (1-5), oldest to newest, with a hover tooltip. */
 function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
   const [hover, setHover] = useState<number | null>(null)
+  const [mode, setMode] = useState<'overall' | 'type'>('overall')
   // Draw at the container's real pixel width so text and marks keep their size.
   const box = useRef<HTMLDivElement>(null)
   const [W, setW] = useState(640)
@@ -212,9 +272,29 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
   const tick = (ms: number) =>
     sameDay ? new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : fmtDate(ms)
 
+  // One line per question type: partial sessions are left out, as in the overall trend.
+  const counted = sessions.filter((s) => !s.partial)
+  const types = typeStats(counted)
+  const tx = (s: HistorySession) => {
+    const i = sessions.indexOf(s)
+    return x(i)
+  }
+
   return (
     <figure className="chart">
-      <figcaption className="muted small">Overall score per session (1–5)</figcaption>
+      <figcaption className="muted small">
+        {mode === 'overall' ? 'Overall score per session (1–5)' : 'Average score per question type (1–5)'}
+      </figcaption>
+      {types.length > 0 && (
+        <div className="chart-toggle" role="group" aria-label="Chart lines">
+          <button className={`ghost ${mode === 'overall' ? 'on' : ''}`} aria-pressed={mode === 'overall'} onClick={() => setMode('overall')}>
+            Overall
+          </button>
+          <button className={`ghost ${mode === 'type' ? 'on' : ''}`} aria-pressed={mode === 'type'} onClick={() => setMode('type')}>
+            By question type
+          </button>
+        </div>
+      )}
       <div className="chart-box" ref={box}>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Overall score over ${sessions.length} sessions, latest ${last.s.overall_score!.toFixed(1)}`}>
           {[1, 2, 3, 4, 5].map((v) => (
@@ -238,16 +318,37 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
               </text>
             ) : null,
           )}
-          {h && <line className="crosshair" x1={h.cx} x2={h.cx} y1={pad.t} y2={pad.t + ih} />}
-          <path className="series" d={path} />
-          {pts.map((p, i) => (
+          {mode === 'type' &&
+            types.map((t, ti) => {
+              const color = TYPE_COLORS[ti % TYPE_COLORS.length]
+              const tp = t.points.map((p) => ({ cx: tx(p.s), cy: y(p.value), ...p }))
+              const lastP = tp[tp.length - 1]
+              return (
+                <g key={t.category}>
+                  <path className="type-line" stroke={color} d={tp.map((p, i) => `${i ? 'L' : 'M'}${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join(' ')} />
+                  {tp.map((p, i) => (
+                    <circle key={i} className="type-dot" fill={color} cx={p.cx} cy={p.cy} r={4}>
+                      <title>{`${CATEGORY_LABEL[t.category] ?? t.category}, ${fmtDateTime(p.s.started_at)}: ${p.value.toFixed(1)}`}</title>
+                    </circle>
+                  ))}
+                  <text className="type-label" fill={color} x={lastP.cx + 9} y={lastP.cy} dy="0.35em">
+                    {CATEGORY_LABEL[t.category] ?? t.category}
+                  </text>
+                </g>
+              )
+            })}
+          {mode === 'overall' && h && <line className="crosshair" x1={h.cx} x2={h.cx} y1={pad.t} y2={pad.t + ih} />}
+          {mode === 'overall' && <path className="series" d={path} />}
+          {mode === 'overall' && pts.map((p, i) => (
             <circle key={i} className={`dot ${hover === i ? 'on' : ''} ${p.s.partial ? 'partial' : ''}`} cx={p.cx} cy={p.cy} r={hover === i ? 5.5 : 4} />
           ))}
-          <text className="direct-label" x={last.cx + 9} y={last.cy} dy="0.35em">
-            {last.s.overall_score!.toFixed(1)}
-          </text>
+          {mode === 'overall' && (
+            <text className="direct-label" x={last.cx + 9} y={last.cy} dy="0.35em">
+              {last.s.overall_score!.toFixed(1)}
+            </text>
+          )}
           {/* Hit targets bigger than the marks. */}
-          {pts.map((p, i) => (
+          {mode === 'overall' && pts.map((p, i) => (
             <circle
               key={`hit-${i}`}
               className="hit"
@@ -264,7 +365,7 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
             />
           ))}
         </svg>
-        {h && (
+        {mode === 'overall' && h && (
           <div
             className="tooltip"
             style={{ left: `${(h.cx / W) * 100}%`, top: `${(h.cy / H) * 100}%` }}

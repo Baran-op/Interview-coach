@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from . import claude_json, db
+from .categories import CATEGORIES, clean_competency, resolve_category
 
 log = logging.getLogger("interview-coach.feedback")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -101,6 +102,8 @@ _ANSWER_SCHEMA = {
     "properties": {
         "question_turn": {"type": "integer"},
         "question": {"type": "string"},
+        "category": {"type": "string", "enum": list(CATEGORIES)},
+        "competency": {"type": "string"},
         "answer_summary": {"type": "string"},
         "scores": {
             "type": "object",
@@ -149,9 +152,12 @@ def normalise(raw: dict, turns: list[dict]) -> dict:
             continue
         scores = {c: _score((a.get("scores") or {}).get(c)) for c in CRITERIA}
         qt = a.get("question_turn")
+        question = str(a.get("question") or "")
         answers.append({
             "question_turn": qt if isinstance(qt, int) else None,
-            "question": str(a.get("question") or ""),
+            "question": question,
+            "category": resolve_category(a.get("category"), question),
+            "competency": clean_competency(a.get("competency")),
             "answer_summary": str(a.get("answer_summary") or ""),
             "scores": scores,
             "average": round(sum(scores.values()) / len(CRITERIA), 1),

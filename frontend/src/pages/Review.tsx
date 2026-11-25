@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
+import { api, CATEGORY_LABEL, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -295,6 +295,10 @@ export default function Review({ sessionId, onStart }: Props) {
                     <strong>
                       {i + 1}. {a.question}
                     </strong>
+                    <span className="chip" title={a.competency || undefined}>
+                      {CATEGORY_LABEL[a.category] ?? a.category}
+                      {a.competency ? ` · ${a.competency}` : ''}
+                    </span>
                     {session.has_recording && at != null && (
                       <button className="ghost small" onClick={() => seek(at)}>
                         ▶ {clock(at)}

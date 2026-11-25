@@ -23,6 +23,8 @@ How to score:
   - evidence: results, numbers and proof that back up the claims.
 - Be strict and consistent. A 5 is rare. If the candidate needed follow-ups to get the details out, that counts against specificity and evidence.
 - "better_answer": a stronger version of the answer, written in the first person as the candidate would say it out loud, 120 to 200 words, in STAR shape where it fits. Use only facts from the transcript or the CV. Never invent achievements or numbers: where a detail is missing, write a placeholder in square brackets, such as [team size] or [% improvement].
+- "category": one of intro (tell me about yourself), motivation (why this role or company), behavioural (past experience, competency questions), technical (skills, tools, how things work), case (a business or product problem), roleplay (the interviewer plays a client or stakeholder), logistics (notice period, salary, availability, location) or other.
+- "competency": the skill the question tests, in 2 to 4 words, such as "stakeholder management". Reuse the same wording for the same skill.
 - "tips": 2 or 3 short, concrete tips for that answer.
 - "top_fixes": exactly 3 of the most important things to change across the whole interview, most important first, each one actionable in a single sentence.
 - "summary": 2 to 4 sentences on how the interview went overall, written to the candidate ("you").
@@ -34,6 +36,8 @@ Return ONLY a JSON object, with no markdown fences and no other text, in exactly
     {
       "question_turn": 0,
       "question": "the main question, shortened if long",
+      "category": "behavioural",
+      "competency": "stakeholder management",
       "answer_summary": "1-2 sentences on what the candidate said",
       "scores": {"relevance": 3, "structure": 3, "specificity": 3, "evidence": 3},
       "better_answer": "string",

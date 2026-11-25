@@ -31,7 +31,7 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
 ## Stack and layout
 
 - `backend/` Python 3.11, FastAPI. `main.py` routes, `brain.py` Claude Agent SDK interviewer,
-  `feedback.py` report generation, `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
+  `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
   `prompts/` (`interviewer.txt`, `feedback.txt`).
 - `frontend/` Vite + React + TypeScript. `src/pages`, `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
@@ -52,7 +52,7 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - `ANTHROPIC_API_KEY` must NOT be set; the backend refuses to start (would bill API instead of the plan).
   Auth is the Claude Code login (`claude login`, browser flow); `CLAUDE_CODE_OAUTH_TOKEN` in `.env` is an optional override.
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
-- `prompts/interviewer.txt` scripts the whole interview: intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step.
+- `prompts/interviewer.txt` scripts the whole interview: intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list).
 - Keep all avatar interaction going through `AvatarController.say()`.
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
 - Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper. Ending early asks Score / Discard / Keep going; Discard sends `/end` with `score:false` then `DELETE /sessions/{id}`; the beacon and reaper always score.
