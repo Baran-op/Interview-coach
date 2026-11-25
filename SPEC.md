@@ -82,7 +82,7 @@ Models (Whisper, Kokoro) load once at startup and stay in memory. Stream where p
 
 ### Brain (Claude Agent SDK)
 
-- Auth: `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` in `.env`; `ANTHROPIC_API_KEY` must NOT be set (it would bill the API instead). `/health` warns if it is.
+- Auth: the Claude Code login (`claude login`); optionally `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` in `.env`; `ANTHROPIC_API_KEY` must NOT be set (it would bill the API instead). `/health` warns if it is.
 - One `ClaudeSDKClient` per session so the conversation keeps context; no tools allowed (`allowed_tools=[]`), `max_turns=1` per call.
 - System prompt (template, filled from the pack):
 
@@ -178,7 +178,7 @@ interview-coach/
 
 ### One-time setup
 
-1. Install Homebrew, Python 3.11, Node 20+, and Claude Code; run `claude setup-token` and put the token in `.env`.
+1. Install Homebrew, Python 3.11, Node 20+, and Claude Code; run `claude login` (a token in `.env` is optional).
 2. `pip install fastapi uvicorn claude-agent-sdk mlx-whisper mlx-audio python-multipart` (in a venv).
 3. Create the avatar on Avaturn, export .glb with ARKit blendshapes, save to `frontend/public/avatars/`.
 4. `npm create vite@latest frontend -- --template react-ts`, then add three, the TalkingHead library and @ricky0123/vad-web.

@@ -46,7 +46,7 @@ cd frontend && npx tsc -b                                           # type-check
 ## Conventions and gotchas
 
 - `ANTHROPIC_API_KEY` must NOT be set; the backend refuses to start (would bill API instead of the plan).
-  Auth is `CLAUDE_CODE_OAUTH_TOKEN` in `.env`.
+  Auth is the Claude Code login (`claude login`, browser flow); `CLAUDE_CODE_OAUTH_TOKEN` in `.env` is an optional override.
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
 - Keep all avatar interaction going through `AvatarController.say()`.
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).

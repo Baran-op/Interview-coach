@@ -207,8 +207,8 @@ class InterviewBrain:
             elif isinstance(msg, ResultMessage) and msg.is_error:
                 raise BrainError(
                     f"Claude returned an error ({msg.result or msg.subtype}). "
-                    "If this keeps happening, check CLAUDE_CODE_OAUTH_TOKEN in .env "
-                    "(regenerate with `claude setup-token`)."
+                    "If this keeps happening, sign in again with `claude login` "
+                    "(or check CLAUDE_CODE_OAUTH_TOKEN in .env, if you use one)."
                 )
         if not sent_any:
             raise BrainError("Claude returned an empty reply")

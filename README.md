@@ -19,11 +19,12 @@ share it with other people.
    brew install python@3.11 node
    npm install -g @anthropic-ai/claude-code
    ```
-2. Create a subscription token and put it in `.env`:
+2. Sign in with your Claude subscription (opens the browser; skip if you already use Claude Code):
    ```sh
-   claude setup-token            # prints a long-lived token
-   cp .env.example .env          # then paste it after CLAUDE_CODE_OAUTH_TOKEN=
+   claude login
    ```
+   No token is needed. If you can't use the browser login, run `claude setup-token`, copy
+   `.env.example` to `.env` and set `CLAUDE_CODE_OAUTH_TOKEN=` to the token it prints.
    Make sure `ANTHROPIC_API_KEY` is **not** set (`echo $ANTHROPIC_API_KEY` prints nothing).
    If it is set, the backend refuses to start, because it would bill the API instead of
    your plan.

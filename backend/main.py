@@ -72,8 +72,6 @@ def auth_problems() -> list[str]:
             "ANTHROPIC_API_KEY is set: it would bill the API instead of your subscription. "
             "Unset it (shell and .env) and restart."
         )
-    if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        problems.append("CLAUDE_CODE_OAUTH_TOKEN is missing: run `claude setup-token` and put it in .env.")
     return problems
 
 
@@ -150,7 +148,7 @@ async def lifespan(app: FastAPI):
     if os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError(
             "Refusing to start: ANTHROPIC_API_KEY is set and would bill the API instead of "
-            "your Claude subscription. Unset it and use CLAUDE_CODE_OAUTH_TOKEN."
+            "your Claude subscription. Unset it and sign in with `claude login` instead."
         )
     db.init()
     loader = asyncio.create_task(load_models())
@@ -315,7 +313,7 @@ async def health():
     problems = auth_problems()
     body = {
         "ok": not problems,
-        "claude_auth": "subscription token" if not problems else "problem",
+        "claude_auth": ("subscription token" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else "Claude Code login") if not problems else "problem",
         "problems": problems,
         "whisper": {"model": stt.MODEL, **stt.state},
         "kokoro": {"model": tts.MODEL, **tts.state},
