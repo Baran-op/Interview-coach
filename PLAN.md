@@ -451,7 +451,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 - [x] B2. 3a Score or discard on early end
 - [x] B3. 3b Partial sessions
 - [x] B4. 3c Question categories
-- [ ] B5. 3d Score anchors and `rescore.py`
+- [x] B5. 3d Score anchors and `rescore.py`
 
 **Phase C: memory across sessions**
 

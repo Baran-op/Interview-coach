@@ -185,6 +185,11 @@ Optional `.env` settings:
 | `IDLE_TIMEOUT_MIN` | `30` | Interviews idle this long are ended and scored automatically (`0` disables) |
 | `FEEDBACK_MODEL` | same as the interviewer | Model for the feedback report |
 
+To check how steady the report's scores are, run `python -m scripts.rescore <session_id> --n 3`
+(from the repo root, venv active). It re-runs the report on a stored transcript without saving
+anything and prints the spread per answer and criterion (targets: 0.3 overall, 0.5 per answer).
+Each run is one Claude request, so use it sparingly.
+
 Words missing from Kokoro's dictionary (often company names) are spelled out letter by
 letter. For proper pronunciation, `brew install espeak-ng`: Kokoro then uses espeak for
 those words automatically.

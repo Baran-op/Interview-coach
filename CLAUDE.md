@@ -35,6 +35,7 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
   `prompts/` (`interviewer.txt`, `feedback.txt`).
 - `frontend/` Vite + React + TypeScript. `src/pages`, `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
+- `scripts/` hand-run tools. `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`), git-ignored.
 - `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist.
 

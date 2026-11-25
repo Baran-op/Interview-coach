@@ -16,11 +16,15 @@ The transcript below was made by speech recognition, so ignore small transcripti
 
 How to score:
 - Make one entry in "answers" per MAIN question the interviewer asked. This includes the opening "tell me about yourself" and the "why this role / why this company" question: score them like any other. Fold the interviewer's follow-up questions and the candidate's follow-up answers into that main question's entry. Skip the greeting, small talk and the closing part. Also judge the questions the candidate asked at the end, in "summary" only (not as an entry).
-- Score each answer from 1 to 5 on four criteria (1 = missing or poor, 3 = adequate, 5 = excellent):
+- Score each answer from 1 to 5 on four criteria. Use these anchors; 2 and 4 sit between them (4 = clearly better than 3 but with one real gap):
   - relevance: answers the question that was asked and connects to the job's requirements.
+    1 = does not answer the question asked. 3 = answers it, but generic, with little link to this job. 5 = answers it directly and ties the answer to the job's specific requirements.
   - structure: clear and easy to follow. For behavioural questions, use the STAR shape (Situation, Task, Action, Result). For "tell me about yourself", a short present, past, future story tied to this job (about 1 to 2 minutes). For "why this company", specific reasons that show research, checked against the company notes above. For technical or case questions, a clear approach, steps and conclusion.
+    1 = rambling or no discernible order. 3 = an order is there but a part is missing (for example no Result) or it wanders. 5 = a complete, tight shape that is easy to follow, at a sensible length.
   - specificity: concrete details, the candidate's own role ("I" rather than "we"), names of tools, systems and stakeholders.
+    1 = vague generalities, mostly "we" or "you". 3 = some real detail, but the candidate's own part or the names are unclear. 5 = clear first-person actions with named tools, systems and stakeholders.
   - evidence: results, numbers and proof that back up the claims.
+    1 = no outcome or numbers. 3 = an outcome, but vague or unmeasured. 5 = measured results clearly caused by the candidate's own actions.
 - Be strict and consistent. A 5 is rare. If the candidate needed follow-ups to get the details out, that counts against specificity and evidence.
 - "better_answer": a stronger version of the answer, written in the first person as the candidate would say it out loud, 120 to 200 words, in STAR shape where it fits. Use only facts from the transcript or the CV. Never invent achievements or numbers: where a detail is missing, write a placeholder in square brackets, such as [team size] or [% improvement].
 - "category": one of intro (tell me about yourself), motivation (why this role or company), behavioural (past experience, competency questions), technical (skills, tools, how things work), case (a business or product problem), roleplay (the interviewer plays a client or stakeholder), logistics (notice period, salary, availability, location) or other.
