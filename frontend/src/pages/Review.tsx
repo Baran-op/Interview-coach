@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, CATEGORY_LABEL, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
+import { api, CATEGORY_LABEL, type AnswerDelivery, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -327,6 +327,7 @@ export default function Review({ sessionId, onStart }: Props) {
                       <FragmentBar key={c} label={LABEL[c]} value={a.scores[c]} />
                     ))}
                   </div>
+                  {a.delivery && <DeliveryLine d={a.delivery} />}
                   <p className="small">{a.answer_summary}</p>
                   {a.tips.length > 0 && (
                     <ul className="small">
@@ -398,5 +399,34 @@ function FragmentBar({ label, value }: { label: string; value: number }) {
       </span>
       <span>{value}</span>
     </>
+  )
+}
+
+const mmss = (s: number) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`
+
+/** Per-answer delivery stats; length outside the target is highlighted. */
+function DeliveryLine({ d }: { d: AnswerDelivery }) {
+  const n = (c: number, w: string) => `${c} ${w}${c === 1 ? '' : 's'}`
+  const parts: { text: string; bad?: boolean }[] = [
+    {
+      text: mmss(d.first_answer_seconds) + (d.target ? ` (aim ${mmss(d.target[0])}-${mmss(d.target[1])})` : ''),
+      bad: d.flag !== null,
+    },
+  ]
+  if (d.wpm) parts.push({ text: `${d.wpm} wpm`, bad: d.wpm > 180 || d.wpm < 100 })
+  parts.push({ text: `I ${d.i_count} / we ${d.we_count}`, bad: d.we_count > d.i_count })
+  parts.push({ text: n(d.numbers, 'number'), bad: d.numbers === 0 })
+  parts.push({ text: n(d.fillers, 'filler'), bad: d.fillers >= 5 })
+  parts.push({ text: n(d.hedges, 'hedge'), bad: d.hedges >= 3 })
+  if (d.pauses_over_1s) parts.push({ text: n(d.pauses_over_1s, 'long pause'), bad: true })
+  return (
+    <p className="small delivery-line" title={d.flag ? `This answer was too ${d.flag} for its question type` : undefined}>
+      {parts.map((p, i) => (
+        <span key={i}>
+          {i > 0 && ' · '}
+          <span className={p.bad ? 'out-of-target' : undefined}>{p.text}</span>
+        </span>
+      ))}
+    </p>
   )
 }

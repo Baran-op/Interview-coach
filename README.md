@@ -131,7 +131,7 @@ The chips under each interviewer message show the expression tags parsed from th
   - the transcript (click a line to jump there);
   - the feedback report: overall score, the top 3 things to fix, filler words, average
     answer length, and for each main question scores from 1 to 5 on relevance, structure
-    (STAR), specificity and evidence, with tips and a stronger model answer;
+    (STAR), specificity and evidence, a delivery line (length against the target for the question type, words per minute, I vs we, numbers, fillers, hedges, long pauses) with tips and a stronger model answer;
   - downloads of the recording (.webm) and the report (.md).
 - **The report takes one Claude request per session.** Claude does the judging (scores, tips,
   model answers). Filler words, answer length and the overall score are computed locally, so
@@ -206,7 +206,7 @@ those words automatically.
 | GET | `/packs`, `/packs/{id}` | List or load packs |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
 | POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}` → streams the reply |
-| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
+| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms,t_listen_ms?}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
 | POST | `/sessions/{id}/recording` | Multipart `recording` (.webm) |
 | GET | `/sessions/{id}/recording` | The recording (range requests supported for seeking; `?download=1` to save) |
 | GET | `/sessions/{id}/report` | `{status: pending/ready/error, report, report_md, error}` |

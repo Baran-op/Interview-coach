@@ -467,7 +467,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 - [ ] E1. 4c Benchmark and pick the Whisper model
 - [ ] E2. 4d Re-transcribe for the report (only if E1 says so)
-- [ ] E3. 5 Audio stats and per-answer delivery in the report and Review
+- [x] E3. 5 Audio stats and per-answer delivery in the report and Review
 
 **Phase F: realism**
 

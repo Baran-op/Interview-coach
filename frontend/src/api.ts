@@ -69,6 +69,7 @@ export interface TurnTiming {
   turn_idx: number
   t_start_ms: number | null
   t_end_ms: number | null
+  t_listen_ms?: number | null
 }
 
 export interface Turn {
@@ -119,6 +120,20 @@ export const CATEGORY_LABEL: Record<string, string> = {
 
 export type Criterion = 'relevance' | 'structure' | 'specificity' | 'evidence'
 
+export interface AnswerDelivery {
+  seconds: number
+  first_answer_seconds: number
+  wpm: number | null
+  fillers: number
+  hedges: number
+  i_count: number
+  we_count: number
+  numbers: number
+  pauses_over_1s: number | null
+  target: [number, number] | null
+  flag: 'short' | 'long' | null
+}
+
 export interface AnswerFeedback {
   question_turn: number | null
   question: string
@@ -129,6 +144,7 @@ export interface AnswerFeedback {
   average: number
   better_answer: string
   tips: string[]
+  delivery?: AnswerDelivery
 }
 
 export interface Report {

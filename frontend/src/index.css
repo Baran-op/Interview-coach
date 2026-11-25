@@ -227,5 +227,7 @@ input, select, textarea { max-width: 100%; }
 .chart .type-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .type-dot { stroke: var(--card); stroke-width: 2; }
 .chart .type-label { font-size: 11px; font-weight: 600; }
+.delivery-line { margin: 0 0 6px; }
+.out-of-target { color: var(--danger); font-weight: 600; }
 .type-table { margin-top: 12px; }
 .type-table h3 { font-size: 0.95rem; margin: 0 0 4px; }

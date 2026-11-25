@@ -226,6 +226,12 @@ def _since_last_time_md(report: dict) -> list[str]:
     return [*out, ""]
 
 
+def _delivery_line(d: dict) -> str:
+    from .delivery import delivery_line
+
+    return delivery_line(d)
+
+
 def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | None = None) -> str:
     from datetime import datetime
 
@@ -265,6 +271,7 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
             "",
             f"**What you said:** {a['answer_summary']}",
             "",
+            *([f"**Delivery:** {_delivery_line(a['delivery'])}", ""] if a.get("delivery") else []),
             *[f"- {t}" for t in a["tips"]],
             "",
             "**A stronger answer:**",
@@ -301,6 +308,9 @@ async def generate(session_id: str) -> None:
         fixes = earlier[0]["top_fixes"] if earlier else []
         raw = await _ask_claude(_system_prompt(pack, fixes), _transcript(turns))
         report = normalise(raw, turns)
+        from . import delivery  # imported here: delivery imports this module
+
+        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id)
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

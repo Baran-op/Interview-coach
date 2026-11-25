@@ -200,6 +200,7 @@ class TurnTiming(BaseModel):
     turn_idx: int
     t_start_ms: int | None = None
     t_end_ms: int | None = None
+    t_listen_ms: int | None = None  # when the mic opened; thinking time = t_start_ms - t_listen_ms
 
 
 class EndIn(BaseModel):

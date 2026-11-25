@@ -85,6 +85,9 @@ _EXTRA_COLUMNS = {
         "error": "TEXT",
         "created_at": "INTEGER",
     },
+    "turns": {
+        "t_listen_ms": "INTEGER",  # when the mic opened for this answer
+    },
 }
 
 
@@ -185,11 +188,11 @@ def add_turn(session_id: str, speaker: str, text: str, expressions: list | None 
 
 
 def set_turn_times(session_id: str, timeline: list[dict]) -> None:
-    """timeline: [{turn_idx, t_start_ms, t_end_ms}], times relative to the recording start."""
+    """timeline: [{turn_idx, t_start_ms, t_end_ms, t_listen_ms?}], times relative to the recording start."""
     with connect() as conn:
         conn.executemany(
-            "UPDATE turns SET t_start_ms = ?, t_end_ms = ? WHERE session_id = ? AND idx = ?",
-            [(t.get("t_start_ms"), t.get("t_end_ms"), session_id, t["turn_idx"]) for t in timeline],
+            "UPDATE turns SET t_start_ms = ?, t_end_ms = ?, t_listen_ms = ? WHERE session_id = ? AND idx = ?",
+            [(t.get("t_start_ms"), t.get("t_end_ms"), t.get("t_listen_ms"), session_id, t["turn_idx"]) for t in timeline],
         )
 
 

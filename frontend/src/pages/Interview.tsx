@@ -37,6 +37,8 @@ interface Props {
 interface Span {
   start: number
   end: number
+  /** When the mic opened (answers only). */
+  listen?: number
 }
 
 const SILENCE_OPTIONS = [1500, 2000, 2500, 3000, 4000, 5000, 0] // 0 = only when I press Done
@@ -143,7 +145,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const currentReply = useRef<{ idx: number; start: number } | null>(null)
 
   const timelineList = (): TurnTiming[] => {
-    const list = [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end }))
+    const list: TurnTiming[] = [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end, t_listen_ms: t.listen }))
     const r = currentReply.current
     if (r && !timeline.current.has(r.idx)) list.push({ turn_idx: r.idx, t_start_ms: r.start, t_end_ms: clockNow() })
     return list
@@ -350,7 +352,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     const candidateMsg = addMessage({ speaker: 'candidate', text: '…', pending: true })
     const silenceMs = bySilence ? silenceRef.current : 0
     const end = Math.max(0, clockNow() - silenceMs)
-    const answerSpan = { start: Math.min(speechStart.current ?? listenStart.current, end), end }
+    const answerSpan = { start: Math.min(speechStart.current ?? listenStart.current, end), end, listen: listenStart.current }
     void runReply(api.sendAudio(id, encodeWav(audio)), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
   }
 
@@ -363,7 +365,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     setError(null)
     if (listenerRef.current?.listening) await listenerRef.current.cancel()
     const candidateMsg = addMessage({ speaker: 'candidate', text })
-    const answerSpan = { start: listenStart.current, end: clockNow() }
+    const answerSpan = { start: listenStart.current, end: clockNow(), listen: listenStart.current }
     void runReply(api.sendText(id, text), { candidateMsg, answerSpan })
   }
 
