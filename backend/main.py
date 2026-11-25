@@ -476,6 +476,18 @@ def _save_drill_audio(attempt_id: str, data: bytes) -> str | None:
         return None
 
 
+DRILL_MAX_MS = 30 * 60 * 1000  # drill face/segment times count from the start of the answer
+
+
+async def _drill_words(audio_path: str) -> list[dict]:
+    """Word offsets for the quotes under face moments; never fails the attempt."""
+    try:
+        return await gpu.run(stt.words_from_wav, audio_path)
+    except Exception as exc:
+        log.warning("Word timestamps failed for drill answer: %s", exc)
+        return []
+
+
 @app.post("/packs/{pack_id}/drill/attempts")
 async def drill_attempt(pack_id: str, request: Request):
     """Multipart `audio` (WAV) with `question`, `category`, `seconds`; or JSON {question, category, text, seconds?}."""
@@ -483,11 +495,13 @@ async def drill_attempt(pack_id: str, request: Request):
     if not pack:
         raise HTTPException(404, "Pack not found")
     audio_bytes = None
+    face_raw = segments_raw = None
     if request.headers.get("content-type", "").startswith("multipart/form-data"):
         form = await request.form()
         upload = form.get("audio")
         if upload is None or isinstance(upload, str):
             raise HTTPException(422, "Missing `audio` file")
+        face_raw, segments_raw = form.get("face"), form.get("segments")
         fields = {k: str(form.get(k) or "") for k in ("question", "category", "seconds")}
         if not stt.is_ready():
             raise HTTPException(503, f"Speech recognition is not ready ({stt.state['status']})")
@@ -527,6 +541,15 @@ async def drill_attempt(pack_id: str, request: Request):
         baseline = db.voice_baseline()
         voice = await asyncio.to_thread(delivery.voice_from_wavs, [audio_path])
         result["delivery"] = {**result.get("delivery", {}), **delivery.voice_fields(voice, baseline)}
+        face = clean_face(face_raw, DRILL_MAX_MS)
+        if face:
+            face_out = delivery.face_fields(face, db.face_baseline())
+            segments = clean_segments(segments_raw, DRILL_MAX_MS)
+            if segments and (face_out["face"] or {}).get("moments"):
+                words = await _drill_words(audio_path)
+                if words:
+                    delivery.add_quotes(face_out, [{"segments": segments, "words": words}])
+            result["delivery"] = {**result["delivery"], **face_out}
     attempt = db.add_attempt(attempt_id, pack_id, key, question, category, answer, seconds, audio_path, result)
     return {"attempt": _attempt_out(attempt), "previous": _attempt_out(previous)}
 

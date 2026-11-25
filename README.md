@@ -189,7 +189,9 @@ minute.
   (Done-only: pauses never end it, press Done) or typed. **Each attempt uses one Claude request**
   (the page says so). The result shows score bars, tips, "Better than last time" (from the second
   attempt) and a collapsed "Show a stronger answer", which appears only after you have attempted.
-  The attempt list shows each average and its change since the previous attempt.
+  The attempt list shows each average, its change since the previous attempt, pitch range and eye contact.
+  With the Setup face toggle on and the face model installed, Drill opens the camera (small self-view for framing; released when you leave the page) and
+  adds eye contact, flags and timed moments (time into the answer plus what you were saying, no play button: Drill records no video) to spoken attempts. If the camera is denied, Drill carries on without it.
 - The Markdown report download ends with the full, timestamped transcript.
 
 ### Tuning
@@ -251,7 +253,7 @@ those words automatically.
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
 | GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale}`; `stale` is true when the JD, CV or company notes changed since it was written |
 | POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape |
-| POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` (with `voice`, `voice_flags`, `voice_usual` when audio was sent) |
+| POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` (with `voice`, `voice_flags`, `voice_usual` when audio was sent, and `face`, `face_flags`, `face_usual` when the multipart also has `face`; optional `segments` give the quotes. Times in `face` and `segments` count from the start of the answer) |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
 | POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s) |
 | POST | `/tts` | `{text, voice?}` -> `{sentences:[...]}`, each shaped like the NDJSON `sentence` event (reads a question aloud) |

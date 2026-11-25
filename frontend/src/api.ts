@@ -308,7 +308,7 @@ export interface DrillResult {
   tips: string[]
   improved: string[]
   better_answer: string
-  delivery?: (Record<string, unknown> & { seconds?: number | null }) & VoiceDelivery
+  delivery?: (Record<string, unknown> & { seconds?: number | null }) & VoiceDelivery & FaceDelivery
 }
 
 export interface DrillAttempt {
@@ -454,7 +454,7 @@ export const api = {
   /** One Claude request. Typed answer (`text`) or a spoken one (`wav` plus its length in seconds). */
   drillAttempt: async (
     packId: string,
-    a: { question: string; category: string | null; text?: string; wav?: Blob; seconds?: number },
+    a: { question: string; category: string | null; text?: string; wav?: Blob; seconds?: number; face?: FaceStats | null; segments?: SpeechSegment[] },
   ) => {
     const path = `/packs/${packId}/drill/attempts`
     if (a.wav) {
@@ -463,6 +463,8 @@ export const api = {
       form.append('question', a.question)
       form.append('category', a.category ?? '')
       if (a.seconds) form.append('seconds', String(a.seconds))
+      if (a.face) form.append('face', JSON.stringify(a.face))
+      if (a.segments?.length) form.append('segments', JSON.stringify(a.segments))
       const res = await fetch(`/api${path}`, { method: 'POST', body: form })
       if (!res.ok) throw await errorFrom(res)
       return (await res.json()) as { attempt: DrillAttempt; previous: DrillAttempt | null }

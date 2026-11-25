@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, CATEGORY_LABEL, VOICE_FLAG_LABEL, voiceTooltip, type Criterion, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
+import { api, CATEGORY_LABEL, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type Criterion, type FaceMoment, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
 import { InterviewerPlayer, type Speaker } from '../audio/player'
-import { TurnListener } from '../audio/vad'
+import { TurnListener, type SpeechSegment } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
+import { FaceTracker, faceModelAvailable, getFaceTracking } from '../face/FaceTracker'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -32,6 +33,12 @@ async function questionKey(question: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12)
 }
 
+const clock = (ms: number) => `${Math.floor(Math.round(ms / 1000) / 60)}:${String(Math.round(ms / 1000) % 60).padStart(2, '0')}`
+
+/** Moments in a drill answer: time into the answer and what you were saying; no play button, as Drill records no video. */
+const momentText = (m: FaceMoment) =>
+  `${FACE_MOMENT_LABEL[m.kind]} ${clock(m.start_ms)}\u2013${clock(m.end_ms)} (${Math.max(0, Math.round((m.end_ms - m.start_ms) / 1000))} s)`
+
 function fmt(n: number | null) {
   return n == null ? '–' : n.toFixed(1)
 }
@@ -59,6 +66,11 @@ export default function Drill({ packId, initialQuestion }: Props) {
   const [phase, setPhase] = useState<'idle' | 'speaking' | 'listening' | 'scoring'>('idle')
   const [voiceReady, setVoiceReady] = useState(false)
   const [avatarCtx, setAvatarCtx] = useState<AudioContext | null>(null)
+  const [camStream, setCamStream] = useState<MediaStream | null>(null)
+  const selfView = useRef<HTMLVideoElement>(null)
+  const faceRef = useRef<FaceTracker | null>(null)
+  const originRef = useRef(performance.now()) // face and speech times count from here (the start of the answer)
+  const clockNow = () => performance.now() - originRef.current
 
   const playerRef = useRef<InterviewerPlayer | null>(null)
   const avatarRef = useRef<AvatarController | null>(null)
@@ -135,11 +147,54 @@ export default function Drill({ packId, initialQuestion }: Props) {
     }
   }, [])
 
+  // The camera opens only when the Setup toggle is on and the model exists, and is released on leaving the page.
+  useEffect(() => {
+    let cancelled = false
+    let stream: MediaStream | null = null
+    void (async () => {
+      if (!getFaceTracking() || !(await faceModelAvailable())) return
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false })
+      } catch (e) {
+        if (!cancelled) setNotice(`Camera not available (${(e as Error).name === 'NotAllowedError' ? 'permission denied' : (e as Error).message}). Drilling without face stats.`)
+        return
+      }
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+      const tracker = await FaceTracker.create(stream, clockNow)
+      if (cancelled) {
+        tracker?.stop()
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+      if (!tracker) {
+        stream.getTracks().forEach((t) => t.stop())
+        setNotice('Face tracking could not start. Drilling without face stats.')
+        return
+      }
+      faceRef.current = tracker
+      setCamStream(stream)
+    })()
+    return () => {
+      cancelled = true
+      faceRef.current?.stop()
+      faceRef.current = null
+      stream?.getTracks().forEach((t) => t.stop())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selfView.current) selfView.current.srcObject = camStream
+  }, [camStream, current])
+
   const playQuestion = async () => {
     if (!current || !pack) return
     setError(null)
     await player().unlock()
     setPhase('speaking')
+    faceRef.current?.startSegment('listen') // you look at the screen while the question is read: calibrates "on screen"
     try {
       const { sentences } = await api.tts(current.question, pack.options.voice)
       if (!sentences.some((s) => s.audio_wav_base64)) setNotice('No voice available (Kokoro is not ready). Read the question above.')
@@ -150,16 +205,18 @@ export default function Drill({ packId, initialQuestion }: Props) {
     } catch (e) {
       setError((e as Error).message)
     }
+    faceRef.current?.endSegment()
     setPhase((p) => (p === 'speaking' ? 'idle' : p))
   }
 
-  const submit = async (a: { text?: string; wav?: Blob; seconds?: number }) => {
+  const submit = async (a: { text?: string; wav?: Blob; seconds?: number; segments?: SpeechSegment[] }) => {
     const cur = currentRef.current
     if (!cur) return
     setPhase('scoring')
     setError(null)
     try {
-      const r = await api.drillAttempt(packId, { question: cur.question, category: cur.category, ...a })
+      const face = a.wav ? (faceRef.current?.endSegment() ?? null) : null
+      const r = await api.drillAttempt(packId, { question: cur.question, category: cur.category, ...a, face })
       setResult(r)
       setTyped('')
       setAttempts((await api.drillAttempts(packId, cur.key)).attempts)
@@ -179,21 +236,27 @@ export default function Drill({ packId, initialQuestion }: Props) {
       if (!listenerRef.current) {
         const l = new TurnListener(
           {
-            onTurn: (audio) => void submit({ wav: encodeWav(audio), seconds: audio.length / 16000 }),
+            onTurn: (audio, _bySilence, segments) => void submit({ wav: encodeWav(audio), seconds: audio.length / 16000, segments }),
             onEmpty: () => {
+              faceRef.current?.endSegment()
               setNotice("I didn't hear anything. Try again.")
               setPhase('idle')
             },
           },
           0, // Done-only: thinking pauses are normal in a drill
+          clockNow,
         )
         await l.init()
         listenerRef.current = l
       }
       setNotice(null)
       setPhase('listening')
+      originRef.current = performance.now()
+      faceRef.current?.endSegment()
+      faceRef.current?.startSegment('answer')
       await listenerRef.current.listen()
     } catch (e) {
+      faceRef.current?.endSegment()
       setPhase('idle')
       setError(`Could not start the microphone: ${(e as Error).message}`)
     }
@@ -258,6 +321,12 @@ export default function Drill({ packId, initialQuestion }: Props) {
             <p className="muted">Pick a question to practise.</p>
           ) : (
             <>
+              {camStream && (
+                <figure className="drill-self">
+                  <video ref={selfView} className="self-view-inline" autoPlay muted playsInline />
+                  <figcaption className="muted small">Camera on for eye contact stats; nothing is recorded. Turn it off in Setup.</figcaption>
+                </figure>
+              )}
               {avatarCtx && (
                 <Avatar
                   ctx={avatarCtx}
@@ -335,6 +404,34 @@ export default function Drill({ packId, initialQuestion }: Props) {
                       ))}
                     </p>
                   )}
+                  {result.attempt.result.delivery?.face && (
+                    <div className="small" title={faceTooltip(result.attempt.result.delivery) || undefined}>
+                      <p>
+                        {result.attempt.result.delivery.face.on_screen_pct != null ? `Eye contact ${Math.round(result.attempt.result.delivery.face.on_screen_pct)}%` : 'Face not found often enough to measure'}
+                        {(result.attempt.result.delivery.face_flags?.length ?? 0) > 0 && ': '}
+                        {result.attempt.result.delivery.face_flags?.map((f, i) => (
+                          <span key={f}>
+                            {i > 0 && ', '}
+                            <span className="out-of-target">{FACE_FLAG_LABEL[f]}</span>
+                          </span>
+                        ))}
+                      </p>
+                      {(result.attempt.result.delivery.face.moments?.length ?? 0) > 0 && (
+                        <ul>
+                          {result.attempt.result.delivery.face.moments!.map((m, i) => (
+                            <li key={i}>
+                              {momentText(m)}
+                              {m.quote && (
+                                <>
+                                  , while saying: <em>{'\u201c'}{m.quote}{'\u201d'}</em>
+                                </>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   {result.previous && result.attempt.result.improved.length > 0 && (
                     <>
                       <strong>Better than last time</strong>
@@ -381,6 +478,9 @@ export default function Drill({ packId, initialQuestion }: Props) {
                             <td>{avg != null && prev != null ? delta(avg - prev) : ''}</td>
                             <td title={voiceTooltip(a.result?.delivery ?? {}) || undefined}>
                               {a.result?.delivery?.voice?.pitch_range_st != null ? `${a.result.delivery.voice.pitch_range_st.toFixed(1)} st` : ''}
+                            </td>
+                            <td title={faceTooltip(a.result?.delivery ?? {}) || undefined}>
+                              {a.result?.delivery?.face?.on_screen_pct != null ? `eye contact ${Math.round(a.result.delivery.face.on_screen_pct)}%` : ''}
                             </td>
                           </tr>
                         )

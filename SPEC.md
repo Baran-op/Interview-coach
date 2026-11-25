@@ -77,7 +77,7 @@ A session has three screens: Setup, Interview and Review.
 | POST | `/sessions/{id}/recording` | Upload the recorded .webm |
 | GET | `/sessions/{id}/report` | Feedback report JSON + Markdown |
 | GET | `/packs/{id}/drill`, `/packs/{id}/drill/attempts?key=` | Drill mode: the question list; one question's attempts |
-| POST | `/packs/{id}/drill/attempts` | Transcribe (audio) or take text, score with one Claude request, store the attempt |
+| POST | `/packs/{id}/drill/attempts` | Transcribe (audio) or take text, score with one Claude request, store the attempt (optional `face`/`segments` add face stats to its `delivery`) |
 | POST | `/research` | Draft company notes from the web (`{notes, sources}`) |
 | POST | `/tts` | Voice a short text as `sentence` objects |
 | GET | `/health` | Checks Claude auth, Whisper and Kokoro are loaded |
