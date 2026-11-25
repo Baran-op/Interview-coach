@@ -156,7 +156,8 @@ minute.
   with a hidden time note, so it can pace itself and wrap up on time; the note isn't saved
   in your transcript.
 - **History** (top right) lists each pack with:
-  - your number of sessions, latest and best score, and change since the first session;
+  - your number of sessions, latest and best score, and change since the first session
+    (sessions with fewer than 3 scored answers are marked "partial" and left out of these stats);
   - a chart of the overall score per session (hover for the per-criterion breakdown,
     click a point to open that review);
   - a table of every session: overall score, the four criteria, filler words and average
@@ -165,7 +166,7 @@ minute.
   From there you can **Run again**, **Edit** or **Delete** a pack, and open or delete
   sessions. Deleting also removes the recordings.
 - The Review page compares each report with your **previous attempt** at the same pack
-  (overall score, each criterion, filler words), and has **Run this pack again**.
+  (overall score, each criterion, filler words; partial sessions are skipped), and has **Run this pack again**.
 - The Markdown report download ends with the full, timestamped transcript.
 
 ### Tuning

@@ -144,6 +144,7 @@ export interface HistorySession {
   filler_count: number | null
   avg_answer_seconds: number | null
   answers: number | null
+  partial: boolean
 }
 
 export interface PackHistory {

@@ -195,6 +195,8 @@ details.better p { white-space: pre-wrap; background: var(--bubble-them); paddin
 .chart .axis { fill: var(--muted); font-size: 11px; }
 .chart .series { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+.chart .dot.partial { fill: var(--card); stroke: var(--accent); }
+.chip { margin-left: 6px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); font-size: 0.75em; font-weight: 400; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .direct-label { fill: var(--text); font-size: 12px; font-weight: 600; }
 .chart .hit { fill: transparent; cursor: pointer; outline: none; }

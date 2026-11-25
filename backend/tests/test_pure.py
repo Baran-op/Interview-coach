@@ -65,3 +65,32 @@ def test_keyword_prompt():
 
 def test_keyword_prompt_empty():
     assert "a role" in stt.keyword_prompt("", "", "")
+
+
+def test_is_partial():
+    from backend import db
+
+    assert db.MIN_SCORED_ANSWERS == 3
+    assert db.is_partial(0) and db.is_partial(2)
+    assert not db.is_partial(3) and not db.is_partial(10)
+    assert not db.is_partial(None)
+
+
+def test_session_summary_partial_flag():
+    import json
+    import sqlite3
+
+    from backend import db
+
+    def row(n):
+        report = None
+        if n is not None:
+            a = {"scores": {c: 3 for c in db.CRITERIA}}
+            report = json.dumps({"answers": [a] * n})
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        return conn.execute("SELECT 'x' AS id, ? AS report_json", (report,)).fetchone()
+
+    assert db._session_summary(row(2))["partial"] is True
+    assert db._session_summary(row(3))["partial"] is False
+    assert db._session_summary(row(None))["partial"] is False

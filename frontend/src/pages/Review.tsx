@@ -26,6 +26,7 @@ export default function Review({ sessionId, onStart }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(0)
   const [audioOnly, setAudioOnly] = useState(false)
+  const [isPartial, setIsPartial] = useState(false)
   const [previous, setPrevious] = useState<HistorySession | null>(null)
   const video = useRef<HTMLVideoElement>(null)
 
@@ -41,7 +42,8 @@ export default function Review({ sessionId, onStart }: Props) {
     api
       .packHistory(packId)
       .then((h) => {
-        const earlier = h.filter((s) => s.started_at < session.started_at && s.overall_score != null && s.criteria)
+        const earlier = h.filter((s) => s.started_at < session.started_at && s.overall_score != null && s.criteria && !s.partial)
+        setIsPartial(h.find((s) => s.id === session.id)?.partial ?? false)
         setPrevious(earlier[earlier.length - 1] ?? null)
       })
       .catch(() => {})
@@ -243,6 +245,11 @@ export default function Review({ sessionId, onStart }: Props) {
               </div>
               <p>{r.summary}</p>
             </div>
+            {isPartial && (
+              <div className="banner">
+                Too few answers to count: this session is marked partial and is left out of your history trends.
+              </div>
+            )}
             {previous && <Comparison report={r} previous={previous} />}
 
             <h3>Top 3 things to fix</h3>

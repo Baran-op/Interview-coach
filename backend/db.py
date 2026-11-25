@@ -296,6 +296,14 @@ def delete_pack(pack_id: str) -> list[str]:
 
 CRITERIA = ("relevance", "structure", "specificity", "evidence")
 
+# A session with fewer scored answers than this is "partial": shown in History but left out of trends.
+MIN_SCORED_ANSWERS = 3
+
+
+def is_partial(scored_answers: int | None) -> bool:
+    """True when a report scored too few answers to be comparable. Unscored sessions are not partial."""
+    return scored_answers is not None and scored_answers < MIN_SCORED_ANSWERS
+
 
 def _session_summary(row: sqlite3.Row) -> dict:
     d = dict(row)
@@ -304,6 +312,7 @@ def _session_summary(row: sqlite3.Row) -> dict:
     d["filler_count"] = None
     d["avg_answer_seconds"] = None
     d["answers"] = None
+    d["partial"] = False
     if report and report.get("answers"):
         answers = report["answers"]
         d["criteria"] = {
@@ -312,6 +321,7 @@ def _session_summary(row: sqlite3.Row) -> dict:
         d["filler_count"] = (report.get("filler_words") or {}).get("count")
         d["avg_answer_seconds"] = report.get("avg_answer_seconds")
         d["answers"] = len(answers)
+        d["partial"] = is_partial(len(answers))
     return d
 
 

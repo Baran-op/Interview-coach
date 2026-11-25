@@ -67,7 +67,7 @@ export default function History({ onStart }: Props) {
         </div>
       )}
       {data.map(({ pack, sessions }) => {
-        const scored = sessions.filter((s) => s.overall_score != null)
+        const scored = sessions.filter((s) => s.overall_score != null && !s.partial)
         const first = scored[0]?.overall_score ?? null
         const latest = scored[scored.length - 1]?.overall_score ?? null
         const best = scored.length ? Math.max(...scored.map((s) => s.overall_score!)) : null
@@ -107,7 +107,7 @@ export default function History({ onStart }: Props) {
                     <Stat label="since first session" value={signed(latest - first)} />
                   )}
                 </div>
-                {scored.length > 1 && <ScoreChart sessions={scored} />}
+                {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} />}
                 <div className="table-wrap">
                   <table className="sessions">
                     <caption className="sr-only">Sessions for {pack.title}</caption>
@@ -141,6 +141,11 @@ export default function History({ onStart }: Props) {
                           <td>{fmtLen(s)}</td>
                           <td className="num strong">
                             {s.overall_score != null ? s.overall_score.toFixed(1) : s.report_status === 'pending' ? '…' : '–'}
+                            {s.partial && (
+                              <span className="chip" title="Too few answers to count in trends">
+                                partial
+                              </span>
+                            )}
                           </td>
                           {CRITERIA.map((c) => (
                             <td key={c.key} className="num">
@@ -236,7 +241,7 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
           {h && <line className="crosshair" x1={h.cx} x2={h.cx} y1={pad.t} y2={pad.t + ih} />}
           <path className="series" d={path} />
           {pts.map((p, i) => (
-            <circle key={i} className={`dot ${hover === i ? 'on' : ''}`} cx={p.cx} cy={p.cy} r={hover === i ? 5.5 : 4} />
+            <circle key={i} className={`dot ${hover === i ? 'on' : ''} ${p.s.partial ? 'partial' : ''}`} cx={p.cx} cy={p.cy} r={hover === i ? 5.5 : 4} />
           ))}
           <text className="direct-label" x={last.cx + 9} y={last.cy} dy="0.35em">
             {last.s.overall_score!.toFixed(1)}
@@ -267,7 +272,7 @@ function ScoreChart({ sessions }: { sessions: HistorySession[] }) {
           >
             <div className="muted small">{fmtDateTime(h.s.started_at)}</div>
             <div>
-              <strong>{h.s.overall_score!.toFixed(1)}</strong> overall
+              <strong>{h.s.overall_score!.toFixed(1)}</strong> overall{h.s.partial ? ' (partial, not counted)' : ''}
             </div>
             {h.s.criteria && (
               <div className="small">
