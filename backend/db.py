@@ -149,6 +149,13 @@ def get_session(session_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def next_turn_idx(session_id: str) -> int:
+    """Index the next added turn will get (the current turn count)."""
+    with connect() as conn:
+        (idx,) = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()
+    return idx
+
+
 def add_turn(session_id: str, speaker: str, text: str, expressions: list | None = None) -> int:
     """Append a turn and return its index within the session."""
     with connect() as conn:

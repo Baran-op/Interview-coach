@@ -138,8 +138,15 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     return Math.max(0, Math.round(now - c.startedAt - c.pausedTotal))
   }
 
-  const timelineList = (): TurnTiming[] =>
-    [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end }))
+  /** The interviewer reply being spoken right now; ending mid-reply still timestamps it. */
+  const currentReply = useRef<{ idx: number; start: number } | null>(null)
+
+  const timelineList = (): TurnTiming[] => {
+    const list = [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end }))
+    const r = currentReply.current
+    if (r && !timeline.current.has(r.idx)) list.push({ turn_idx: r.idx, t_start_ms: r.start, t_end_ms: clockNow() })
+    return list
+  }
 
   /** Save the timings and recording. Safe to repeat: finished steps are skipped, so a failure can be retried. */
   const saveSession = async () => {
@@ -261,7 +268,10 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           if (ev.tts_error) console.warn('TTS error:', ev.tts_error)
           const first = ev.index === 0
           player.enqueue(s, () => {
-            if (replyStart === null) replyStart = clockNow()
+            if (replyStart === null) {
+              replyStart = clockNow()
+              currentReply.current = { idx: ev.turn_idx, start: replyStart }
+            }
             setCaption(ev.text)
             if (phaseRef.current === 'thinking') setPhase('speaking')
             if (first && opts.turnEndedAt) {
@@ -291,6 +301,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     if (sentences.length) lastSentences.current = sentences
     await player.whenIdle()
     if (replyTurn !== null) timeline.current.set(replyTurn, { start: replyStart ?? clockNow(), end: clockNow() })
+    currentReply.current = null
     if (phaseRef.current === 'ended') return
     if (isFinal) {
       setPhase('finished')

@@ -443,7 +443,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 - [ ] A3. 4a Whisper hint words from the CV, without sentence-start words
 - [x] A4. 4b Save each answer's audio (starts collecting data for 4c)
 - [x] A5. S1 Longer silence options and Done-only mode
-- [ ] A6. S2 Timestamps for a reply cut short
+- [x] A6. S2 Timestamps for a reply cut short
 
 **Phase B: progress you can trust**
 

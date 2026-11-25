@@ -244,6 +244,7 @@ async def speak(
     producer = asyncio.create_task(produce())
     full_text, expressions, is_final, index = "", [], False, 0
     turn_idx: int | None = None
+    reply_idx = db.next_turn_idx(session_id)  # session lock prevents races
     first_audio_ms = None
     try:
         for ev in prelude:
@@ -275,6 +276,7 @@ async def speak(
             yield _line({
                 "type": "sentence",
                 "index": index,
+                "turn_idx": reply_idx,
                 "text": parsed.text,
                 "expressions": parsed.expressions,
                 "audio_wav_base64": audio["audio_wav_base64"] if audio else None,

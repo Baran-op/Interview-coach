@@ -45,6 +45,7 @@ export type InterviewEvent =
   | {
       type: 'sentence'
       index: number
+      turn_idx: number
       text: string
       expressions: Expression[]
       audio_wav_base64: string | null
