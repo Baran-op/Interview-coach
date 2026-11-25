@@ -32,7 +32,8 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, feedback, gpu, stt, tts
+from . import db, drill, feedback, gpu, stt, tts
+from .categories import resolve_category
 from .brain import (
     OPENING_CUE,
     time_note,
@@ -407,6 +408,128 @@ async def delete_pack(pack_id: str):
         raise HTTPException(409, "An interview with this pack is still running")
     _remove_files(db.delete_pack(pack_id))
     return {"deleted": pack_id}
+
+
+@app.get("/packs/{pack_id}/drill")
+async def drill_questions(pack_id: str):
+    pack = db.get_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Pack not found")
+    return {"questions": drill.questions_for_pack(pack)}
+
+
+def _attempt_out(a: dict | None) -> dict | None:
+    if a is None:
+        return None
+    return {k: v for k, v in a.items() if k != "audio_path"} | {"has_audio": bool(a.get("audio_path"))}
+
+
+@app.get("/packs/{pack_id}/drill/attempts")
+async def drill_attempts(pack_id: str, key: str):
+    if not db.get_pack(pack_id):
+        raise HTTPException(404, "Pack not found")
+    return {"attempts": [_attempt_out(a) for a in db.list_attempts(pack_id, key)]}
+
+
+def _save_drill_audio(attempt_id: str, data: bytes) -> str | None:
+    try:
+        db.DRILL_DIR.mkdir(parents=True, exist_ok=True)
+        path = db.DRILL_DIR / f"{attempt_id}.wav"
+        path.write_bytes(data)
+        return str(path)
+    except OSError as exc:
+        log.warning("Could not save drill audio: %s", exc)
+        return None
+
+
+@app.post("/packs/{pack_id}/drill/attempts")
+async def drill_attempt(pack_id: str, request: Request):
+    """Multipart `audio` (WAV) with `question`, `category`, `seconds`; or JSON {question, category, text, seconds?}."""
+    pack = db.get_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Pack not found")
+    audio_bytes = None
+    if request.headers.get("content-type", "").startswith("multipart/form-data"):
+        form = await request.form()
+        upload = form.get("audio")
+        if upload is None or isinstance(upload, str):
+            raise HTTPException(422, "Missing `audio` file")
+        fields = {k: str(form.get(k) or "") for k in ("question", "category", "seconds")}
+        if not stt.is_ready():
+            raise HTTPException(503, f"Speech recognition is not ready ({stt.state['status']})")
+        audio_bytes = await upload.read()
+        hint = stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", ""), pack.get("profile", ""))
+        try:
+            answer = await gpu.run(stt.transcribe, audio_bytes, hint)
+        except Exception as exc:
+            raise HTTPException(422, f"Could not read the audio: {exc}")
+        if not answer:
+            raise HTTPException(422, "Didn't catch that. Please answer again.")
+    else:
+        body = await request.json()
+        fields = {k: str((body or {}).get(k) or "") for k in ("question", "category", "seconds")}
+        answer = str((body or {}).get("text") or "").strip()
+        if not answer:
+            raise HTTPException(422, "Empty answer")
+    question = " ".join(fields["question"].split())
+    if not question:
+        raise HTTPException(422, "Missing question")
+    try:
+        seconds = float(fields["seconds"]) if fields["seconds"] else None
+    except ValueError:
+        seconds = None
+    if seconds is not None and seconds <= 0:
+        seconds = None
+    category = resolve_category(fields["category"], question)
+    key = drill.question_key(question)
+    previous = (db.list_attempts(pack_id, key) or [None])[-1]
+    try:
+        result = await drill.score(pack, question, category, answer, seconds, previous)
+    except drill.DrillError as exc:
+        raise HTTPException(502, str(exc))
+    attempt_id = db.new_attempt_id()
+    audio_path = await asyncio.to_thread(_save_drill_audio, attempt_id, audio_bytes) if audio_bytes else None
+    attempt = db.add_attempt(attempt_id, pack_id, key, question, category, answer, seconds, audio_path, result)
+    return {"attempt": _attempt_out(attempt), "previous": _attempt_out(previous)}
+
+
+class TtsIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    voice: str = tts.DEFAULT_VOICE
+
+
+@app.post("/tts")
+async def speak_text(body: TtsIn):
+    """Voice a short text (a drill question). Same fields as the NDJSON `sentence` event."""
+    voice = body.voice if body.voice in tts.VOICES else tts.DEFAULT_VOICE
+    splitter = SentenceSplitter()
+    chunks = splitter.feed(body.text + " ") + splitter.flush()
+    sentences = []
+    for chunk in chunks:
+        parsed = parse_tags(chunk)
+        if not parsed.text:
+            continue
+        audio, tts_error = None, None
+        if tts.is_ready():
+            try:
+                audio = await gpu.run(tts.synthesize, parsed.text, voice)
+            except Exception as exc:
+                tts_error = f"{type(exc).__name__}: {exc}"
+                log.warning("TTS failed for %r: %s", parsed.text, exc)
+        else:
+            tts_error = f"Kokoro is not ready ({tts.state['status']})"
+        sentences.append({
+            "type": "sentence",
+            "index": len(sentences),
+            "turn_idx": None,
+            "text": parsed.text,
+            "expressions": parsed.expressions,
+            "audio_wav_base64": audio["audio_wav_base64"] if audio else None,
+            "duration_ms": audio["duration_ms"] if audio else 0,
+            "word_timings": audio["word_timings"] if audio else [],
+            "tts_error": tts_error,
+        })
+    return {"sentences": sentences}
 
 
 @app.get("/packs/{pack_id}/history")

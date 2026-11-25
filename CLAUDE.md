@@ -31,12 +31,12 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
 ## Stack and layout
 
 - `backend/` Python 3.11, FastAPI. `main.py` routes, `brain.py` Claude Agent SDK interviewer,
-  `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `delivery.py` per-answer delivery stats (`text_stats`, `TARGET_SECONDS`; audio stats and report wiring come in E3), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
+  `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `drill.py` drill mode (question list, one-Claude-call scoring with `prompts/drill.txt`, `question_key`), `delivery.py` per-answer delivery stats (`text_stats`, `TARGET_SECONDS`; audio stats and report wiring come in E3), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
   `prompts/` (`interviewer.txt`, `feedback.txt`).
 - `frontend/` Vite + React + TypeScript. `src/pages`, `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
 - `scripts/` hand-run tools. `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `feedback.txt` has 1/3/5 anchors per criterion.
-- `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`), git-ignored.
+- `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
 - `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist.
 
 ## Commands
@@ -53,7 +53,7 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - `ANTHROPIC_API_KEY` must NOT be set; the backend refuses to start (would bill API instead of the plan).
   Auth is the Claude Code login (`claude login`, browser flow); `CLAUDE_CODE_OAUTH_TOKEN` in `.env` is an optional override.
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
-- `prompts/interviewer.txt` scripts the whole interview: intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list).
+- `prompts/interviewer.txt` scripts the whole interview: intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list), and keep the criteria and anchors in `prompts/drill.txt` identical to `feedback.txt` (a test checks this).
 - Session history: `db.pack_report_history` feeds `brain.history_block` (`{history}` in `interviewer.txt`); `feedback._system_prompt` gets the previous session's fixes (`{previous_fixes}`) and the report carries `previous_fixes` statuses. Keep the two prompt files in step.
 - Keep all avatar interaction going through `AvatarController.say()`.
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).

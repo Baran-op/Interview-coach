@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS reports (
     report_json TEXT,
     report_md TEXT
 );
+CREATE TABLE IF NOT EXISTS attempts (
+    id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL REFERENCES packs(id),
+    question_key TEXT NOT NULL,
+    question TEXT NOT NULL,
+    category TEXT,
+    answer_text TEXT NOT NULL,
+    seconds REAL,               -- first word to end of answer
+    audio_path TEXT,            -- data/answers/drill/<id>.wav
+    result_json TEXT,           -- scores, average, tips, improved, better_answer, delivery
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attempts_by_question ON attempts (pack_id, question_key, created_at);
 """
 
 
@@ -293,8 +306,50 @@ def delete_pack(pack_id: str) -> list[str]:
         ids = [r["id"] for r in conn.execute("SELECT id FROM sessions WHERE pack_id = ?", (pack_id,))]
     paths = [p for p in (delete_session(i) for i in ids) if p]
     with connect() as conn:
+        paths += [r["audio_path"] for r in conn.execute(
+            "SELECT audio_path FROM attempts WHERE pack_id = ? AND audio_path IS NOT NULL", (pack_id,))]
+        conn.execute("DELETE FROM attempts WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
     return paths
+
+
+# -------------------------------------------------------------- attempts --- #
+
+DRILL_DIR = ANSWERS_DIR / "drill"
+
+
+def _attempt_row(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["result"] = json.loads(d.pop("result_json")) if d.get("result_json") else None
+    return d
+
+
+def new_attempt_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def add_attempt(attempt_id: str, pack_id: str, key: str, question: str, category: str | None,
+                answer_text: str, seconds: float | None, audio_path: str | None, result: dict) -> dict:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO attempts (id, pack_id, question_key, question, category, answer_text, seconds,"
+            " audio_path, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (attempt_id, pack_id, key, question, category, answer_text, seconds, audio_path,
+             json.dumps(result), _now_ms()),
+        )
+        row = conn.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone()
+    return _attempt_row(row)
+
+
+def list_attempts(pack_id: str, key: str | None = None) -> list[dict]:
+    """A pack's attempts, oldest first, optionally for one question key."""
+    sql, args = "SELECT * FROM attempts WHERE pack_id = ?", [pack_id]
+    if key:
+        sql += " AND question_key = ?"
+        args.append(key)
+    with connect() as conn:
+        rows = conn.execute(sql + " ORDER BY created_at, rowid", args).fetchall()
+    return [_attempt_row(r) for r in rows]
 
 
 # --------------------------------------------------------------- history --- #

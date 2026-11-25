@@ -217,6 +217,10 @@ those words automatically.
 | PUT, DELETE | `/packs/{id}` | Edit a pack; delete it with all its sessions and recordings |
 | GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
+| GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, then your own) |
+| POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` |
+| GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
+| POST | `/tts` | `{text, voice?}` -> `{sentences:[...]}`, each shaped like the NDJSON `sentence` event (reads a question aloud) |
 
 `/sessions` and `/turn` respond with NDJSON (one JSON object per line), so the first
 sentence can play while Claude is still writing the rest:

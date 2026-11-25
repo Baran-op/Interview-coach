@@ -76,6 +76,9 @@ A session has three screens: Setup, Interview and Review.
 | POST | `/sessions/{id}/end` | Closes the Claude client; triggers feedback generation |
 | POST | `/sessions/{id}/recording` | Upload the recorded .webm |
 | GET | `/sessions/{id}/report` | Feedback report JSON + Markdown |
+| GET | `/packs/{id}/drill`, `/packs/{id}/drill/attempts?key=` | Drill mode: the question list; one question's attempts |
+| POST | `/packs/{id}/drill/attempts` | Transcribe (audio) or take text, score with one Claude request, store the attempt |
+| POST | `/tts` | Voice a short text as `sentence` objects |
 | GET | `/health` | Checks Claude auth, Whisper and Kokoro are loaded |
 
 Models (Whisper, Kokoro) load once at startup and stay in memory. Stream where possible: start TTS on the first full sentence of Claude's reply instead of waiting for the whole reply.
@@ -147,6 +150,7 @@ packs(id, title, role, company, jd, profile, company_notes, options_json, create
 sessions(id, pack_id, started_at, ended_at, recording_path, overall_score)
 turns(id, session_id, idx, speaker, text, expressions_json, t_start_ms, t_end_ms)
 reports(session_id, report_json, report_md)
+attempts(id, pack_id, question_key, question, category, answer_text, seconds, audio_path, result_json, created_at)
 ```
 
 Report JSON: `{overall_score, summary, answers:[{question, answer_summary, scores:{relevance, structure, specificity, evidence}, better_answer, tips[]}], filler_words:{count, examples[]}, avg_answer_seconds, top_fixes[3]}`.
