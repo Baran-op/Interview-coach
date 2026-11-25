@@ -30,6 +30,8 @@ plus the coaching improvements and the voice and face delivery stats (Phase H, H
 Phase I in `PLAN-brief.md` (materials in, interview brief out, so any profession works) is built: I0-I6 and I8,
 plus I7's docs. I7's end-to-end check with two fictional packs (about 26 Claude requests) waits for the user's
 approval; tick I7 once it has run.
+Next: `PLAN-voice.md` (Voice tab in Review: pitch over time, flat stretches, advice in the same report request).
+Planned only, nothing built yet (V0-V13).
 
 ## Stack and layout
 
@@ -44,7 +46,7 @@ approval; tick I7 once it has run.
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`, `src/index.css` (the whole design system).
 - `scripts/` hand-run tools. `python -m scripts.backfill_delivery` recomputes delivery (incl. voice and face) for stored reports and drill attempts from the saved WAVs (no Claude calls, idempotent). `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `python -m scripts.voice_stats` prints voice stats for every saved answer WAV (calibration, H2); `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
-- `SPEC.md` the original spec and milestones. `PLAN-brief.md` the interview-brief plan (Phase I) with its build-order checklist.
+- `SPEC.md` the original spec and milestones. `PLAN-brief.md` the interview-brief plan (Phase I) with its build-order checklist. `PLAN-voice.md` the voice-analysis plan with its build-order checklist.
 
 ## Commands
 
