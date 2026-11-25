@@ -472,7 +472,7 @@ rows.
       WAV↔session mapping and joins.
 - [x] V2. `voice.flat_sections` (10 s window, 2.5 s hop, ≥ 60 pitched frames, provisional thresholds, joins
       ≥ 2 s split, caps).
-- [ ] V3. Calibration: you record 12 Drill answers; `scripts.voice_windows` gives clips, a CSV and agreement
+- [x] V3 (script built, calibration awaits user; thresholds still provisional). Calibration: you record 12 Drill answers; `scripts.voice_windows` gives clips, a CSV and agreement
       scores; set the constants (about 12 Claude requests).
 - [ ] V4. Word timestamps for every spoken turn, filled before the report call; timing measured; Drill words
       gathered alongside scoring.
