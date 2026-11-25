@@ -102,7 +102,8 @@ still bleed into your answer.
    guess is wrong. A pack holds up to 150,000 characters of text (the running total is shown); only the
    extracted text is kept, never the file. Then choose the type, number of questions, difficulty, style,
    interviewer name and **voice** (US or UK English, female or male).
-2. Click **Save pack & start interview**. Chrome asks for the microphone the first time.
+2. Click **Save pack**. For a new pack Setup then offers **Write the interview brief (1 Claude request)**
+   or **Skip: use the standard interview** (see "The interview brief" below). Chrome asks for the microphone the first time.
    The pack is saved, so you can start it again later from **Saved packs**. A new pack starts
    with copies of the latest pack's "about you" materials (your CV).
 3. The interviewer greets you and asks the first question. When the dot turns blue it's
@@ -168,6 +169,29 @@ Packs, sessions, turns (with timings) and reports are stored in `data/interview.
 recordings in `data/recordings/` and spoken answers as WAVs in `data/answers/<session>/<turn>.wav`
 (about 2 MB per answered minute; both git-ignored). A webcam recording is roughly 7-8 MB per
 minute.
+
+### The interview brief
+
+A pack's **interview brief** (**Interview brief** next to Prep on a saved pack, `#/brief/<pack id>`) says what
+the interview is and how it is scored, so the app works for any profession, not only corporate job interviews.
+One Claude request reads your materials and writes:
+
+- **Format**: a conversation, timed **stations** (each with its minutes, category and an optional scenario the
+  interviewer reads out) or a **panel** (2 to 4 named members, all played by the one avatar and voice); total
+  minutes; whether it opens with "tell me about yourself" and ends with your questions.
+- **Criteria** (3 to 6, each scored 1 to 5 with 1/3/5 anchors): from your mark scheme when you added one
+  (with how its scale maps onto 1-5), otherwise the app's standard four, word for word.
+- **Categories** of question, each with the expected shape of an answer, an optional extra scoring rule and
+  a target answer length.
+- What they'll probe (competencies, likely questions, gaps), organisation facts from your materials, and
+  a summary and a factual list of your background.
+
+Anything Claude guessed rather than read is listed under **To confirm** with a question. Answer it (your
+answers are sent along when you regenerate) or confirm it; the count shows on the pack in Setup. Everything
+is editable and saving is free. When your materials change, the page says so: **Regenerate** (1 request) or
+**Keep it**. Once a pack has a scored session its criteria and categories are frozen: changing them asks
+first, because History then only compares sessions scored the same way. **Use the standard interview**
+deletes the brief and goes back to today's standard interview.
 
 ### Packs and history
 

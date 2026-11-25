@@ -45,6 +45,93 @@ export interface PackInput {
   options: PackOptions
 }
 
+export type FormatKind = 'conversation' | 'stations' | 'panel'
+
+export interface CriterionDef {
+  key: string
+  name: string
+  description: string
+  anchors: { '1': string; '3': string; '5': string }
+  /** provided: from your mark scheme; inferred: written by Claude; default: the app's standard four. */
+  source: 'provided' | 'inferred' | 'default'
+  scale_note: string
+}
+
+export interface BriefCategory {
+  key: string
+  label: string
+  description: string
+  structure_hint: string
+  scoring_note: string
+  target_seconds: [number, number] | null
+}
+
+export interface Station {
+  key: string
+  name: string
+  minutes: number
+  category: string
+  brief: string
+  scenario: string | null
+}
+
+export interface Assumption {
+  id: string
+  section: string
+  text: string
+  question: string
+  answer: string
+  confirmed: boolean
+}
+
+export interface Brief {
+  version: number
+  field: string
+  role: string
+  organisation: string
+  level: string
+  format: {
+    kind: FormatKind
+    summary: string
+    total_minutes: number | null
+    opening: boolean
+    candidate_questions: boolean
+    panel: { name: string; role: string; focus: string }[]
+    stations: Station[]
+  }
+  criteria: CriterionDef[]
+  categories: BriefCategory[]
+  competencies: string[]
+  likely_questions: { question: string; category: string; why: string }[]
+  probes: string[]
+  facts: string[]
+  candidate_summary: string
+  candidate_facts: string
+  assumptions: Assumption[]
+}
+
+export interface BriefState {
+  brief: Brief
+  /** No brief saved: the standard interview (today's prompts). */
+  is_default: boolean
+  /** The materials changed since the brief was generated. */
+  stale: boolean
+  /** The pack has scored sessions: changing criteria or categories starts History fresh. */
+  frozen: boolean
+  scored_sessions: number
+  origin: 'generated' | 'edited' | 'standard'
+  updated_at: number | null
+}
+
+export interface BriefMeta {
+  exists: boolean
+  kind: FormatKind
+  total_minutes: number | null
+  stations: { name: string; minutes: number }[]
+  stale: boolean
+  to_confirm: number
+}
+
 export interface Pack extends Omit<PackInput, 'materials'> {
   id: string
   created_at: number
@@ -53,6 +140,7 @@ export interface Pack extends Omit<PackInput, 'materials'> {
   company_notes: string | null
   /** Present on GET /packs/{id} and on create/update responses, not in the pack list. */
   materials?: Material[]
+  brief_meta?: BriefMeta
 }
 
 export type ExtractedFile = { name: string; chars: number; text: string } | { name: string; error: string }
@@ -473,6 +561,17 @@ export const api = {
   getReport: (sessionId: string) => request<ReportResponse>(`/sessions/${sessionId}/report`),
   regenerateReport: (sessionId: string) =>
     request<{ status: ReportStatus }>(`/sessions/${sessionId}/report`, { method: 'POST' }),
+  getBrief: (packId: string) => request<BriefState>(`/packs/${packId}/brief`),
+  /** One Claude request. */
+  generateBrief: (packId: string, replaceCriteria = false) =>
+    request<BriefState>(`/packs/${packId}/brief`, { method: 'POST', body: JSON.stringify({ replace_criteria: replaceCriteria }) }),
+  /** Free. 409 when it changes a frozen pack's criteria or categories without `freshStart`. */
+  saveBrief: (packId: string, brief: Brief, opts: { freshStart?: boolean; acceptMaterials?: boolean } = {}) =>
+    request<BriefState>(`/packs/${packId}/brief`, {
+      method: 'PUT',
+      body: JSON.stringify({ brief, fresh_start: !!opts.freshStart, accept_materials: !!opts.acceptMaterials }),
+    }),
+  resetBrief: (packId: string) => request<BriefState>(`/packs/${packId}/brief`, { method: 'DELETE' }),
   getPrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`),
   /** One Claude request. */
   writePrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`, { method: 'POST' }),

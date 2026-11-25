@@ -476,3 +476,35 @@ details.story[open] { border-color: var(--border-strong); padding-bottom: 12px; 
 .material-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .material-total { margin-left: auto; font-variant-numeric: tabular-nums; }
 .material-total.over { color: var(--danger); font-weight: 500; }
+
+/* Interview brief page */
+.button-link.primary { background: var(--ink); border-color: var(--ink); color: var(--ink-text); }
+.button-link.primary:hover { background: var(--ink-hover); border-color: var(--ink-hover); }
+.brief { display: flex; flex-direction: column; gap: 14px; }
+.brief .page-head { margin-bottom: 4px; }
+.brief .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.brief-sections { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.brief-sections:disabled input, .brief-sections:disabled textarea { background: var(--surface-2); color: var(--text-2); }
+.brief-body { display: flex; flex-direction: column; gap: 12px; }
+.brief-body h3 { margin: 8px 0 0; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.brief-list { display: flex; flex-direction: column; gap: 10px; }
+.brief-item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.brief-item.row { flex-direction: row; align-items: flex-end; }
+.brief-item > button { align-self: flex-start; }
+.brief .row label { flex: 1 1 160px; }
+.brief .row label.narrow { flex: 0 0 110px; min-width: 0; }
+.brief .row label.grow { flex: 2 1 220px; }
+.brief .row .field { flex: 0 1 180px; }
+.anchors label { flex: 1 1 180px; }
+.to-confirm { border-color: var(--text); box-shadow: var(--shadow-pop); }
+.to-confirm .section-title { display: flex; align-items: center; gap: 8px; }
+.assumptions { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.assumptions .chip { margin-left: 0; }
+.assumption-answer { display: flex; gap: 8px; margin-top: 6px; }
+.assumption-answer input { flex: 1; min-width: 0; }
+.brief-intro, .brief-offer { justify-content: space-between; gap: 12px; }
+.brief-intro span, .brief-offer span { flex: 1 1 320px; }
+.brief-actions { flex-wrap: wrap; align-items: center; }
+@media (max-width: 640px) {
+  .brief-item.row { flex-direction: column; align-items: stretch; }
+}

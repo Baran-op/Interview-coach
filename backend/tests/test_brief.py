@@ -184,10 +184,13 @@ def test_routes(tmp_db, monkeypatch):
     client.post(f"/packs/{pid}/brief", json={})
     assert seen["previous"]["assumptions"][0]["answer"] == "Yes" and seen["frozen"] is None
 
-    # materials change -> stale
+    # materials change -> stale, until "keep it"
     client.put(f"/packs/{pid}", json={"title": "Doc", "materials": [
         {"name": "CV", "kind": "candidate", "source": "paste", "text": "FY2, now ST1"}]})
-    assert client.get(f"/packs/{pid}/brief").json()["stale"]
+    got = client.get(f"/packs/{pid}/brief").json()
+    assert got["stale"] and client.get("/packs").json()[0]["brief_meta"]["stale"]
+    assert client.put(f"/packs/{pid}/brief", json={"brief": got["brief"]}).json()["stale"]
+    assert not client.put(f"/packs/{pid}/brief", json={"brief": got["brief"], "accept_materials": True}).json()["stale"]
 
     # a scored session freezes the rubric
     sid = db.create_session(pid)

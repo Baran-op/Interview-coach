@@ -72,6 +72,12 @@ const candidateCopies = (ms: Material[] | undefined) => toRows((ms ?? []).filter
 
 export function packSummary(p: Pack) {
   const o = p.options
+  const m = p.brief_meta
+  if (m?.exists && m.kind === 'stations') {
+    const mins = [...new Set(m.stations.map((s) => s.minutes))]
+    const each = mins.length === 1 ? `${m.stations.length} × ${mins[0]} min` : `${m.stations.length} stations, ${m.total_minutes} min`
+    return `stations · ${each} · ${o.difficulty} · ${o.style}`
+  }
   const length = o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`
   return `${o.stage ?? 'full'} · ${o.interview_type} · ${length} · ${o.difficulty} · ${o.style}`
 }
@@ -94,6 +100,7 @@ export default function Setup({ onStart, editPackId }: Props) {
   const [faceOn, setFaceOn] = useState(getFaceTracking)
   const [faceModel, setFaceModel] = useState<boolean | null>(null) // null: still checking
   const [sessions, setSessions] = useState<SessionListItem[]>([])
+  const [saved, setSaved] = useState<Pack | null>(null) // a new pack: offer to write its brief before starting
 
   useEffect(() => {
     void faceModelAvailable().then(setFaceModel)
@@ -148,6 +155,11 @@ export default function Setup({ onStart, editPackId }: Props) {
       if (!materials.length) throw new Error('Add at least one material with text: the job advert, your CV, notes…')
       const data: PackInput = { ...form, title, materials }
       const pack = editingId && !asNew ? await api.updatePack(editingId, data) : await api.createPack(data)
+      if (!editingId || asNew) {
+        setSaved(pack)
+        setSaving(false)
+        return
+      }
       onStart(pack)
     } catch (err) {
       setError((err as Error).message)
@@ -304,14 +316,28 @@ export default function Setup({ onStart, editPackId }: Props) {
         </details>
 
         {error && <div className="banner error">{error}</div>}
+        {saved && (
+          <div className="banner confirm brief-offer">
+            <span>
+              <strong>Pack saved.</strong> An interview brief fits the interview to your materials: the format (a conversation, timed
+              stations or a panel), the criteria (your mark scheme, if you added one) and what they will probe.
+            </span>
+            <a className="button-link primary" href={`#/brief/${saved.id}?generate=1`}>
+              Write the interview brief (1 Claude request)
+            </a>
+            <button type="button" onClick={() => onStart(saved)}>
+              Skip: use the standard interview
+            </button>
+          </div>
+        )}
         <div className="form-actions">
-          <button type="submit" className="primary large" disabled={saving || totalChars(rows) > MAX_PACK_CHARS}>
-            {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Start interview'}
+          <button type="submit" className="primary large" disabled={saving || !!saved || totalChars(rows) > MAX_PACK_CHARS}>
+            {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Save pack'}
             {!saving && <span aria-hidden> →</span>}
           </button>
           {editingId && (
             <button type="button" disabled={saving} onClick={() => void save(true)}>
-              Save as a new pack & start
+              Save as a new pack
             </button>
           )}
         </div>
@@ -329,8 +355,23 @@ export default function Setup({ onStart, editPackId }: Props) {
                 <div className="pack-info">
                   <strong>{p.title}</strong>
                   <div className="muted small">{packSummary(p)}</div>
+                  {p.brief_meta?.exists && (p.brief_meta.to_confirm > 0 || p.brief_meta.stale) && (
+                    <div className="small">
+                      <a className="subtle-link" href={`#/brief/${p.id}`}>
+                        {[
+                          p.brief_meta.to_confirm > 0 && `${p.brief_meta.to_confirm} assumption${p.brief_meta.to_confirm === 1 ? '' : 's'} to confirm`,
+                          p.brief_meta.stale && 'brief out of date',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="pack-actions">
+                  <a className="button-link small" href={`#/brief/${p.id}`}>
+                    Interview brief
+                  </a>
                   <a className="button-link small" href={`#/prep/${p.id}`}>
                     Prep
                   </a>

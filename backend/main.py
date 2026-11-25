@@ -436,7 +436,8 @@ async def create_pack(pack: PackIn):
 
 @app.get("/packs")
 async def list_packs():
-    return db.list_packs()
+    """Packs with `brief_meta` (not their materials)."""
+    return [{k: v for k, v in _pack_out(db.get_pack(p["id"])).items() if k != "materials"} for p in db.list_packs()]
 
 
 @app.get("/packs/{pack_id}")
@@ -512,6 +513,8 @@ class BriefSaveIn(BaseModel):
     brief: dict
     # Confirms that changing the criteria or categories of a scored pack starts History comparisons fresh.
     fresh_start: bool = False
+    # "Keep it" on the stale notice: the brief now counts as written from the current materials.
+    accept_materials: bool = False
 
 
 def _brief_state(pack: dict) -> dict:
@@ -567,7 +570,8 @@ async def save_brief(pack_id: str, body: BriefSaveIn):
         raise HTTPException(409, f"This pack has {n} scored session{'s' if n != 1 else ''}. Changing criteria or "
                                  "categories starts History comparisons fresh.")
     record = db.get_brief(pack_id)
-    source = record["source_hash"] if record else brief.source_hash(db.pack_materials(pack))
+    current = brief.source_hash(db.pack_materials(pack))
+    source = record["source_hash"] if record and not body.accept_materials else current
     db.save_brief(pack_id, new, source, "edited")
     return _brief_state(pack)
 

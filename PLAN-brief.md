@@ -543,7 +543,7 @@ No new dependencies. No new local models.
 - [x] I2. Brief backend: `brief.py`, `prompts/brief.txt`, schema, `clean_brief`, `source_hash`,
       `criteria_hash`, `default_brief`, `briefs` table, GET/POST/PUT/DELETE `/packs/{id}/brief`,
       `BRIEF_MODEL`. Tests for cleaning, hashing and the default brief.
-- [ ] I3. Brief page: sections, assumptions to confirm (answers fed to Regenerate), stale notice,
+- [x] I3. Brief page: sections, assumptions to confirm (answers fed to Regenerate), stale notice,
       Regenerate with its cost shown, freeze warning, "use the standard interview".
 - [ ] I4. Rubric from the brief: `render_criteria` shared by feedback and drill, dynamic schemas,
       `sessions.brief_json` snapshot, criteria and categories stored on new reports and attempts,
