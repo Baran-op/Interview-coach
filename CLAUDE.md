@@ -49,5 +49,7 @@ cd frontend && npx tsc -b                                           # type-check
   Auth is `CLAUDE_CODE_OAUTH_TOKEN` in `.env`.
 - The feedback report costs one Claude request per session; filler words, answer length and overall score are computed locally.
 - Keep all avatar interaction going through `AvatarController.say()`.
-- Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`.
+- Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
+- Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper.
+  The Interview page keeps the recording blob in memory and `saveSession()` is retryable (Retry / Download buttons).
 - Full API table and usage docs live in `README.md`; don't duplicate them here.

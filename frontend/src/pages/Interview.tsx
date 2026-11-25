@@ -79,6 +79,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const [draft, setDraft] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [saving, setSaving] = useState<string | null>(null)
+  const [saveFailed, setSaveFailed] = useState(false)
   const [camStream, setCamStream] = useState<MediaStream | null>(null)
   const [recording, setRecording] = useState<string | null>(null)
   // The 3D avatar mounts once we know an avatar file exists.
@@ -98,6 +99,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const bottom = useRef<HTMLDivElement>(null)
   const silenceRef = useRef(silenceMs)
   const recorderRef = useRef<SessionRecorder | null>(null)
+  const pendingBlob = useRef<Blob | null>(null) // recording not yet uploaded
+  const endSaved = useRef(false) // /end succeeded
   const avatarRef = useRef<AvatarController | null>(null)
   const avatarWait = useRef<{ resolve: (ok: boolean) => void } | null>(null)
   const selfView = useRef<HTMLVideoElement>(null)
@@ -136,6 +139,44 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const timelineList = (): TurnTiming[] =>
     [...timeline.current.entries()].map(([turn_idx, t]) => ({ turn_idx, t_start_ms: t.start, t_end_ms: t.end }))
 
+  /** Save the timings and recording. Safe to repeat: finished steps are skipped, so a failure can be retried. */
+  const saveSession = async () => {
+    const id = sessionRef.current
+    if (!id) return
+    setError(null)
+    setSaveFailed(false)
+    try {
+      if (!endSaved.current) {
+        setSaving('Saving the session…')
+        await api.endSession(id, timelineList())
+        endSaved.current = true
+      }
+      const blob = pendingBlob.current
+      if (blob && blob.size > 0) {
+        setSaving(`Uploading the recording (${(blob.size / 1e6).toFixed(1)} MB)…`)
+        await api.uploadRecording(id, blob)
+        pendingBlob.current = null
+      }
+      setSaving(null)
+      onReview(id)
+    } catch (e) {
+      setSaving(null)
+      setSaveFailed(true)
+      setError(`Saving failed: ${(e as Error).message}`)
+    }
+  }
+
+  /** Save the unsent recording to disk, so a failed upload does not lose it. */
+  const downloadRecording = () => {
+    const blob = pendingBlob.current
+    if (!blob) return
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `interview-${sessionRef.current ?? 'recording'}.webm`
+    a.click()
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+  }
+
   /** End the interview: stop everything, save timings + recording, then open the review. */
   const finishInterview = async () => {
     const id = sessionRef.current
@@ -146,24 +187,15 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     await listenerRef.current?.cancel().catch(() => {})
     setMicSpeaking(false)
     if (!id) return
-    let failed = false
     try {
       setSaving('Saving the session…')
-      const blob = recorderRef.current ? await recorderRef.current.stop() : null
+      pendingBlob.current = recorderRef.current ? await recorderRef.current.stop() : null
       recorderRef.current = null
       setCamStream(null)
-      await api.endSession(id, timelineList())
-      if (blob && blob.size > 0) {
-        setSaving(`Uploading the recording (${(blob.size / 1e6).toFixed(1)} MB)…`)
-        await api.uploadRecording(id, blob)
-      }
     } catch (e) {
-      failed = true
-      setError(`Saving failed: ${(e as Error).message}`)
-    } finally {
-      setSaving(null)
+      setError(`Could not finish the recording: ${(e as Error).message}`)
     }
-    if (!failed) onReview(id)
+    await saveSession()
   }
 
   const startListening = async () => {
@@ -306,6 +338,18 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     playerRef.current?.destroy()
     listenerRef.current = null
     playerRef.current = null
+  }, [])
+
+  // Closing or reloading the tab mid-interview: tell the backend, so the session is saved and scored.
+  useEffect(() => {
+    const onHide = () => {
+      const id = sessionRef.current
+      if (!id || phaseRef.current === 'ended') return
+      const body = new Blob([JSON.stringify({ timeline: timelineList() })], { type: 'application/json' })
+      navigator.sendBeacon(`/api/sessions/${id}/end`, body)
+    }
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
   }, [])
 
   useEffect(() => {
@@ -556,6 +600,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           </button>
         ) : saving ? null : (
           <>
+            {saveFailed && <button onClick={() => void saveSession()}>Retry saving</button>}
+            {saveFailed && pendingBlob.current && <button onClick={downloadRecording}>Download recording</button>}
             {sessionRef.current && <button onClick={() => onReview(sessionRef.current!)}>Go to review</button>}
             <button onClick={onExit}>Back to setup</button>
           </>

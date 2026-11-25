@@ -176,6 +176,7 @@ Optional `.env` settings:
 | `KOKORO_MODEL` | `mlx-community/Kokoro-82M-bf16` | |
 | `KOKORO_VOICE` | `af_heart` | Default voice for packs that don't set one |
 | `INTERVIEWER_MODEL` | your plan's default | Pin the Claude model |
+| `IDLE_TIMEOUT_MIN` | `30` | Interviews idle this long are ended and scored automatically (`0` disables) |
 | `FEEDBACK_MODEL` | same as the interviewer | Model for the feedback report |
 
 Words missing from Kokoro's dictionary (often company names) are spelled out letter by
@@ -192,7 +193,7 @@ those words automatically.
 | GET | `/packs`, `/packs/{id}` | List or load packs |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
 | POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}` → streams the reply |
-| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms}]}`: closes the Claude client, stores turn timings, starts the report |
+| POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms}]}`: closes the Claude client, stores turn timings, starts the report. Also sent by the browser on tab close, and by the server for idle interviews |
 | POST | `/sessions/{id}/recording` | Multipart `recording` (.webm) |
 | GET | `/sessions/{id}/recording` | The recording (range requests supported for seeking; `?download=1` to save) |
 | GET | `/sessions/{id}/report` | `{status: pending/ready/error, report, report_md, error}` |

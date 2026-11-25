@@ -85,7 +85,12 @@ class LiveSession:
     options: dict
     started_at_ms: int
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_active: float = field(default_factory=time.monotonic)
 
+
+# Interviews with no activity for this long are ended and scored automatically
+# (tab closed, laptop slept...). Set IDLE_TIMEOUT_MIN=0 to disable.
+IDLE_TIMEOUT_S = float(os.environ.get("IDLE_TIMEOUT_MIN") or 30) * 60
 
 # Active interviews (lost on server restart).
 LIVE: dict[str, LiveSession] = {}
@@ -113,6 +118,33 @@ async def load_models() -> None:
     await gpu.run(tts.load)
 
 
+async def finish_session(session_id: str, timeline: list[dict] | None = None) -> None:
+    """Close the Claude client, store turn timings, mark the session ended and start its report."""
+    live = LIVE.pop(session_id, None)
+    if live:
+        await live.brain.close()
+    if timeline:
+        db.set_turn_times(session_id, timeline)
+    db.end_session(session_id)
+    report = db.get_report(session_id)
+    if not report or report["status"] == "error":
+        start_report(session_id)
+
+
+async def reap_idle_sessions() -> None:
+    """Finish interviews nobody has touched for IDLE_TIMEOUT_S so they are not lost."""
+    while True:
+        await asyncio.sleep(60)
+        now = time.monotonic()
+        for sid, live in list(LIVE.items()):
+            if not live.lock.locked() and now - live.last_active > IDLE_TIMEOUT_S:
+                log.info("Ending idle session %s", sid)
+                try:
+                    await finish_session(sid)
+                except Exception:
+                    log.exception("Could not end idle session %s", sid)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -122,8 +154,11 @@ async def lifespan(app: FastAPI):
         )
     db.init()
     loader = asyncio.create_task(load_models())
+    reaper = asyncio.create_task(reap_idle_sessions()) if IDLE_TIMEOUT_S > 0 else None
     yield
     loader.cancel()
+    if reaper:
+        reaper.cancel()
     for live in list(LIVE.values()):
         await live.brain.close()
     LIVE.clear()
@@ -268,6 +303,7 @@ async def speak(
             producer.cancel()
         if full_text and turn_idx is None:  # stream cut short: keep what was said
             db.add_turn(session_id, "interviewer", full_text, expressions)
+        live.last_active = time.monotonic()
         if live.lock.locked():
             live.lock.release()
 
@@ -435,15 +471,7 @@ async def end_session(session_id: str, body: EndIn | None = None):
     """Close the Claude client, store turn timings and start the feedback report."""
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
-    live = LIVE.pop(session_id, None)
-    if live:
-        await live.brain.close()
-    if body and body.timeline:
-        db.set_turn_times(session_id, [t.model_dump() for t in body.timeline])
-    db.end_session(session_id)
-    report = db.get_report(session_id)
-    if not report or report["status"] == "error":
-        start_report(session_id)
+    await finish_session(session_id, [t.model_dump() for t in body.timeline] if body else None)
     return {"session_id": session_id, "ended": True, "report_status": "pending"}
 
 
