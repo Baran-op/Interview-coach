@@ -142,7 +142,8 @@ The chips under each interviewer message show the expression tags parsed from th
 - To help count fillers, Whisper is prompted to keep "um"/"uh" instead of cleaning them up.
 
 Packs, sessions, turns (with timings) and reports are stored in `data/interview.db`, and
-recordings in `data/recordings/` (git-ignored). A webcam recording is roughly 7-8 MB per
+recordings in `data/recordings/` and spoken answers as WAVs in `data/answers/<session>/<turn>.wav`
+(about 2 MB per answered minute; both git-ignored). A webcam recording is roughly 7-8 MB per
 minute.
 
 ### Packs and history

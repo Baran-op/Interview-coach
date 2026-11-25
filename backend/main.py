@@ -449,6 +449,15 @@ async def start_session(body: SessionIn):
     )
 
 
+def _save_answer_audio(session_id: str, turn_idx: int, data: bytes) -> None:
+    try:
+        folder = db.ANSWERS_DIR / session_id
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{turn_idx}.wav").write_bytes(data)
+    except OSError as exc:
+        log.warning("Could not save answer audio: %s", exc)
+
+
 @app.post("/sessions/{session_id}/turn")
 async def take_turn(session_id: str, request: Request):
     """Body: multipart with an `audio` WAV file, or JSON {"text": "..."}."""
@@ -461,6 +470,7 @@ async def take_turn(session_id: str, request: Request):
     await live.lock.acquire()
     try:
         stt_ms = None
+        audio_bytes = None
         if request.headers.get("content-type", "").startswith("multipart/form-data"):
             form = await request.form()
             upload = form.get("audio")
@@ -469,6 +479,7 @@ async def take_turn(session_id: str, request: Request):
             if not stt.is_ready():
                 raise HTTPException(503, f"Speech recognition is not ready ({stt.state['status']})")
             data = await upload.read()
+            audio_bytes = data
             try:
                 answer = await gpu.run(stt.transcribe, data, live.stt_prompt)
             except Exception as exc:
@@ -486,6 +497,8 @@ async def take_turn(session_id: str, request: Request):
         raise
 
     turn_idx = db.add_turn(session_id, "candidate", answer)
+    if audio_bytes:
+        asyncio.create_task(asyncio.to_thread(_save_answer_audio, session_id, turn_idx, audio_bytes))
     to_claude = time_note(live.options, live.started_at_ms, int(time.time() * 1000)) + answer
     return StreamingResponse(
         speak(session_id, live, live.brain.stream(to_claude),

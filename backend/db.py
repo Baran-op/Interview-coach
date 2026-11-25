@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import time
 import uuid
@@ -10,6 +11,7 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "interview.db"
+ANSWERS_DIR = DATA_DIR / "answers"  # <session_id>/<turn_idx>.wav, one per spoken answer
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS packs (
@@ -269,6 +271,7 @@ def delete_session(session_id: str) -> str | None:
         conn.execute("DELETE FROM reports WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    shutil.rmtree(ANSWERS_DIR / session_id, ignore_errors=True)
     return row["recording_path"]
 
 
