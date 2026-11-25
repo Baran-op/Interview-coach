@@ -1,5 +1,7 @@
 import react from '@vitejs/plugin-react'
-import { createReadStream, readFileSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
@@ -46,9 +48,62 @@ function vadAssets(): Plugin {
   }
 }
 
+// `npm run dev` also starts the backend (uvicorn from ../.venv on :8000) and stops it on exit.
+// Skipped when something already listens on :8000 (a backend you started by hand) or NO_BACKEND=1.
+const repoRoot = join(import.meta.dirname, '..')
+const BACKEND_PORT = 8000
+const g = globalThis as { __backend?: ChildProcess }
+
+function portInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = connect(port, '127.0.0.1')
+    sock.once('connect', () => (sock.destroy(), resolve(true)))
+    sock.once('error', () => resolve(false))
+  })
+}
+
+function backend(): Plugin {
+  return {
+    name: 'start-backend',
+    apply: 'serve',
+    async configureServer() {
+      if (process.env.NO_BACKEND === '1' || g.__backend) return // a config reload keeps the running backend
+      if (await portInUse(BACKEND_PORT)) {
+        console.log(`[backend] something is already running on :${BACKEND_PORT}, not starting another`)
+        return
+      }
+      const python = join(repoRoot, '.venv/bin/python')
+      if (!existsSync(python)) {
+        console.warn('[backend] .venv not found: create it (see README, Setup) or start the backend by hand')
+        return
+      }
+      const child = spawn(python, ['-m', 'uvicorn', 'backend.main:app', '--port', String(BACKEND_PORT)], {
+        cwd: repoRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      })
+      g.__backend = child
+      const relay = (out: NodeJS.WriteStream) => (chunk: Buffer) => {
+        for (const line of chunk.toString().split('\n')) if (line.trim()) out.write(`[backend] ${line}\n`)
+      }
+      child.stdout?.on('data', relay(process.stdout))
+      child.stderr?.on('data', relay(process.stderr))
+      child.on('exit', (code, signal) => {
+        g.__backend = undefined
+        console.log(`[backend] stopped (${signal ?? `exit code ${code}`})`)
+      })
+      const stop = () => {
+        if (g.__backend && g.__backend.exitCode === null) g.__backend.kill('SIGTERM')
+      }
+      process.once('exit', stop)
+      for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.once(sig, () => (stop(), process.exit()))
+    },
+  }
+}
+
 // The backend runs on :8000. Proxying /api avoids CORS setup.
 export default defineConfig({
-  plugins: [react(), vadAssets()],
+  plugins: [react(), vadAssets(), backend()],
   server: {
     port: 5173,
     host: '127.0.0.1', // IPv4 only, local machine only (the app has no login)

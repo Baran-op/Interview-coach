@@ -47,8 +47,8 @@ before I0 starts.
 ## Commands
 
 ```sh
-source .venv/bin/activate && uvicorn backend.main:app --port 8000   # backend
-cd frontend && npm run dev                                          # frontend, http://localhost:5173
+npm run dev                                                         # repo root: frontend :5173 + backend :8000 (Vite plugin in vite.config.ts spawns .venv uvicorn; skipped if :8000 is taken or NO_BACKEND=1)
+source .venv/bin/activate && uvicorn backend.main:app --port 8000   # backend on its own
 cd frontend && npx tsc -b                                           # type-check frontend
 pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend unit tests (pure functions only)
 ```

@@ -62,15 +62,23 @@ share it with other people.
 
 ## Run
 
-Use two terminals, both started from the repo root:
+From the repo root, one terminal:
 
 ```sh
-# 1. backend on http://localhost:8000
-source .venv/bin/activate
-uvicorn backend.main:app --port 8000
+npm run dev
+```
 
-# 2. frontend on http://localhost:5173
-cd frontend && npm run dev
+This starts the frontend on http://localhost:5173 and the backend on http://localhost:8000, using
+`.venv` (no need to activate it). Backend log lines are prefixed `[backend]`. Ctrl+C stops both.
+If something is already listening on :8000 (for example a backend you started by hand), it is left
+alone and only the frontend starts. `NO_BACKEND=1 npm run dev` starts the frontend only.
+`cd frontend && npm run dev` does the same as the root command.
+
+To run them separately instead:
+
+```sh
+source .venv/bin/activate && uvicorn backend.main:app --port 8000   # backend
+cd frontend && NO_BACKEND=1 npm run dev                              # frontend
 ```
 
 Open http://localhost:5173 in Chrome. If the backend can't reach Claude or finds
