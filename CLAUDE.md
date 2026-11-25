@@ -27,6 +27,9 @@ Personal use only, localhost, uses the user's Claude subscription (never an API 
 Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews),
 plus the coaching improvements and the voice and face delivery stats (Phase H, H1-H8). Their plans (`PLAN.md`,
 `PLAN-energy.md`) are finished and removed; they're in git history. Code comments citing them refer to that history.
+Next: Phase I in `PLAN-brief.md` (materials in, interview brief out, so any profession works). Work through its
+build order, one commit per item, ticking the item's checkbox in the same commit. It is awaiting the user's review
+before I0 starts.
 
 ## Stack and layout
 
@@ -39,7 +42,7 @@ plus the coaching improvements and the voice and face delivery stats (Phase H, H
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`, `src/index.css` (the whole design system).
 - `scripts/` hand-run tools. `python -m scripts.backfill_delivery` recomputes delivery (incl. voice and face) for stored reports and drill attempts from the saved WAVs (no Claude calls, idempotent). `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `python -m scripts.voice_stats` prints voice stats for every saved answer WAV (calibration, H2); `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
-- `SPEC.md` the original spec and milestones.
+- `SPEC.md` the original spec and milestones. `PLAN-brief.md` the interview-brief plan (Phase I) with its build-order checklist.
 
 ## Commands
 

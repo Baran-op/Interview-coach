@@ -23,3 +23,6 @@ frontend/public/avatars/*.glb
 # face tracking model and WASM (scripts/fetch_face_model.sh)
 frontend/public/models/
 frontend/public/mediapipe/
+
+# Claude Code agent worktrees
+.claude/worktrees/
