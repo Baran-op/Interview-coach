@@ -299,7 +299,7 @@ dependency.
 
 - [x] H1. 1a `delivery.voice_stats` with tests, and `scripts/voice_stats.py` (from 1b)
 - [x] H2. 1b Run the calibration on real answers; record thresholds below (no per-answer WAVs existed yet: starting thresholds kept, rerun once data exists)
-- [ ] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
+- [x] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [ ] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json`
 - [ ] H5. 2b Face stats in the report and Review, with timed moments on the recording
 - [ ] H6. 2c What you were saying at each moment (word timestamps, VAD segments)

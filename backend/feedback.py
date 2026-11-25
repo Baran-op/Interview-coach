@@ -310,7 +310,8 @@ async def generate(session_id: str) -> None:
         report = normalise(raw, turns)
         from . import delivery  # imported here: delivery imports this module
 
-        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id)
+        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
+                                 db.voice_baseline(exclude_session=session_id))
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

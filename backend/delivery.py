@@ -226,6 +226,60 @@ def voice_stats(samples, rate: int) -> dict | None:
     }
 
 
+VOICE_KEYS = ("pitch_range_st", "loudness_range_db", "trail_off_pct")
+_FLAT_NO_BASELINE_ST = 4.0
+VOICE_FLAG_LABEL = {"flat": "flat", "lively": "lively", "trailing": "trailing off"}
+
+
+def voice_flags(voice: dict | None, baseline: dict | None) -> list[str]:
+    """Flags for one answer's voice stats: ``flat``, ``lively`` and ``trailing`` (PLAN-energy.md, 1c).
+
+    With a baseline (your usual numbers) flat is under 0.75 x usual pitch range and lively over 1.25 x;
+    without one flat is under 4 st and lively never applies. Trailing is a trail-off share of 40% or more,
+    and also 15 points over your usual when there is one. Missing numbers raise no flag.
+    """
+    if not voice:
+        return []
+    base = baseline or {}
+    flags = []
+    pitch, usual = voice.get("pitch_range_st"), base.get("pitch_range_st")
+    if pitch is not None:
+        if usual:
+            if pitch < 0.75 * usual:
+                flags.append("flat")
+            elif pitch > 1.25 * usual:
+                flags.append("lively")
+        elif pitch < _FLAT_NO_BASELINE_ST:
+            flags.append("flat")
+    trail, usual_trail = voice.get("trail_off_pct"), base.get("trail_off_pct")
+    if trail is not None and trail >= 40 and (usual_trail is None or trail - usual_trail >= 15):
+        flags.append("trailing")
+    return flags
+
+
+def voice_fields(voice: dict | None, baseline: dict | None) -> dict:
+    """The three voice keys stored in a ``delivery`` object."""
+    return {
+        "voice": voice,
+        "voice_flags": voice_flags(voice, baseline),
+        "voice_usual": {k: baseline.get(k) for k in VOICE_KEYS} if baseline and voice else None,
+    }
+
+
+def voice_from_wavs(paths) -> dict | None:
+    """Voice stats over the readable WAVs joined together (one answer = its turns' samples), or None."""
+    parts, rate = [], None
+    for p in paths:
+        wav = read_wav(p)
+        if wav is None or (rate is not None and wav[1] != rate):
+            continue
+        parts.append(wav[0])
+        rate = wav[1]
+    if not parts:
+        return None
+    return voice_stats(np.concatenate(parts), rate)
+
+
 def _turn_seconds(t: dict) -> float:
     a, b = t.get("t_start_ms"), t.get("t_end_ms")
     if a is not None and b is not None and b > a:
@@ -233,12 +287,13 @@ def _turn_seconds(t: dict) -> float:
     return len(t["text"].split()) / 2.5
 
 
-def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None) -> None:
+def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None) -> None:
     """Add a ``delivery`` object to each answer (in place).
 
     An answer covers the candidate turns after its ``question_turn`` and before the next
     answer's (the answer plus its follow-ups). ``audio_dir`` holds ``<turn_idx>.wav``;
-    with no audio, ``pauses_over_1s`` stays None.
+    with no audio, ``pauses_over_1s`` stays None and ``voice`` is None. ``voice_baseline`` is
+    ``db.voice_baseline()``: your usual voice numbers, used for the voice flags.
     """
     starts = sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int))
     for a in answers:
@@ -260,6 +315,9 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None) -> N
                 st = audio_stats(Path(audio_dir) / f"{t['idx']}.wav", span)
                 if st:
                     pauses = (pauses or 0) + st["pauses_over_1s"]
+        voice = None
+        if audio_dir is not None:
+            voice = voice_from_wavs(Path(audio_dir) / f"{t['idx']}.wav" for t in mine)
         target = TARGET_SECONDS.get(a.get("category"))
         flag = None
         if target:
@@ -276,6 +334,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None) -> N
             "pauses_over_1s": pauses,
             "target": list(target) if target else None,
             "flag": flag,
+            **voice_fields(voice, voice_baseline),
         }
 
 
@@ -298,4 +357,7 @@ def delivery_line(d: dict | None) -> str:
     parts += [f"I {d['i_count']} / we {d['we_count']}", plural(d["numbers"], "number"), plural(d["fillers"], "filler"), plural(d["hedges"], "hedge")]
     if d.get("pauses_over_1s"):
         parts.append(plural(d["pauses_over_1s"], "long pause"))
+    flags = [VOICE_FLAG_LABEL[f] for f in d.get("voice_flags") or [] if f in VOICE_FLAG_LABEL]
+    if flags:
+        parts.append("voice: " + ", ".join(flags))
     return " · ".join(parts)

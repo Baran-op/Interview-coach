@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import statistics
 import sqlite3
 import time
 import uuid
@@ -381,6 +382,65 @@ def list_attempts(pack_id: str, key: str | None = None) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(sql + " ORDER BY created_at, rowid", args).fetchall()
     return [_attempt_row(r) for r in rows]
+
+
+def list_attempts_all() -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM attempts ORDER BY created_at, rowid").fetchall()
+    return [_attempt_row(r) for r in rows]
+
+
+def update_attempt_result(attempt_id: str, result: dict) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE attempts SET result_json = ? WHERE id = ?", (json.dumps(result), attempt_id))
+
+
+def update_report_content(session_id: str, report: dict, report_md: str) -> None:
+    """Rewrite a stored report's JSON and Markdown without touching its status or timestamp."""
+    with connect() as conn:
+        conn.execute("UPDATE reports SET report_json = ?, report_md = ? WHERE session_id = ?",
+                     (json.dumps(report), report_md, session_id))
+
+
+VOICE_BASELINE_MIN = 10
+
+
+def voice_baseline(limit: int = 40, exclude_session: str | None = None, exclude_attempt: str | None = None) -> dict | None:
+    """Median of each voice number over your newest ``limit`` answers that have voice stats.
+
+    Draws on report answers and drill attempts, leaving out the session (or attempt) being scored.
+    None below 10 answers. Medians skip missing values.
+    """
+    items: list[tuple[int, dict]] = []
+    with connect() as conn:
+        reports = conn.execute(
+            "SELECT session_id, report_json, COALESCE(created_at, 0) AS ts FROM reports "
+            "WHERE status = 'ready' AND report_json IS NOT NULL ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        attempts = conn.execute(
+            "SELECT id, result_json, created_at AS ts FROM attempts WHERE result_json IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    for r in reports:
+        if r["session_id"] == exclude_session:
+            continue
+        for a in (json.loads(r["report_json"]).get("answers") or []):
+            v = (a.get("delivery") or {}).get("voice")
+            if v:
+                items.append((r["ts"], v))
+    for r in attempts:
+        if r["id"] == exclude_attempt:
+            continue
+        v = (json.loads(r["result_json"]).get("delivery") or {}).get("voice")
+        if v:
+            items.append((r["ts"], v))
+    items.sort(key=lambda it: it[0], reverse=True)
+    voices = [v for _, v in items[:limit]]
+    if len(voices) < VOICE_BASELINE_MIN:
+        return None
+    out = {}
+    for k in ("pitch_range_st", "loudness_range_db", "trail_off_pct"):
+        vals = [v[k] for v in voices if v.get(k) is not None]
+        out[k] = round(statistics.median(vals), 2) if vals else None
+    return out
 
 
 # --------------------------------------------------------------- history --- #

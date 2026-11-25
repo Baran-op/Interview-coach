@@ -120,7 +120,36 @@ export const CATEGORY_LABEL: Record<string, string> = {
 
 export type Criterion = 'relevance' | 'structure' | 'specificity' | 'evidence'
 
-export interface AnswerDelivery {
+export interface VoiceStats {
+  pitch_range_st: number | null
+  loudness_range_db: number | null
+  trail_off_pct: number | null
+  voiced_s: number
+}
+
+export type VoiceFlag = 'flat' | 'lively' | 'trailing'
+
+/** The voice part of a delivery object; absent on reports written before voice stats existed. */
+export interface VoiceDelivery {
+  voice?: VoiceStats | null
+  voice_flags?: VoiceFlag[]
+  voice_usual?: Pick<VoiceStats, 'pitch_range_st' | 'loudness_range_db' | 'trail_off_pct'> | null
+}
+
+export const VOICE_FLAG_LABEL: Record<VoiceFlag, string> = { flat: 'flat', lively: 'lively', trailing: 'trailing off' }
+
+/** "pitch range 3.1 st (your usual 5.4) · trails off in 45% of phrases (usual 20%)", or '' with no voice stats. */
+export function voiceTooltip(d: VoiceDelivery): string {
+  const v = d.voice
+  if (!v) return ''
+  const u = d.voice_usual
+  const parts: string[] = []
+  if (v.pitch_range_st != null) parts.push(`pitch range ${v.pitch_range_st.toFixed(1)} st` + (u?.pitch_range_st != null ? ` (your usual ${u.pitch_range_st.toFixed(1)})` : ''))
+  if (v.trail_off_pct != null) parts.push(`trails off in ${Math.round(v.trail_off_pct)}% of phrases` + (u?.trail_off_pct != null ? ` (usual ${Math.round(u.trail_off_pct)}%)` : ''))
+  return parts.join(' · ')
+}
+
+export interface AnswerDelivery extends VoiceDelivery {
   seconds: number
   first_answer_seconds: number
   wpm: number | null
@@ -228,7 +257,7 @@ export interface DrillResult {
   tips: string[]
   improved: string[]
   better_answer: string
-  delivery?: Record<string, unknown> & { seconds?: number | null }
+  delivery?: (Record<string, unknown> & { seconds?: number | null }) & VoiceDelivery
 }
 
 export interface DrillAttempt {

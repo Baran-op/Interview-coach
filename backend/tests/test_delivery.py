@@ -97,3 +97,58 @@ def test_target_seconds():
     assert delivery.TARGET_SECONDS["motivation"] == (45, 90)
     assert delivery.TARGET_SECONDS["behavioural"] == (90, 150)
     assert "technical" not in delivery.TARGET_SECONDS
+
+
+def test_voice_flags_without_baseline():
+    v = lambda p, t=None: {"pitch_range_st": p, "trail_off_pct": t}  # noqa: E731
+    assert delivery.voice_flags(v(3.0), None) == ["flat"]
+    assert delivery.voice_flags(v(8.0), None) == []  # lively needs a baseline
+    assert delivery.voice_flags(v(6.0, 40), None) == ["trailing"]
+    assert delivery.voice_flags(v(6.0, 39), None) == []
+
+
+def test_voice_flags_with_baseline():
+    base = {"pitch_range_st": 5.0, "trail_off_pct": 20}
+    v = lambda p, t=None: {"pitch_range_st": p, "trail_off_pct": t}  # noqa: E731
+    assert delivery.voice_flags(v(3.7), base) == ["flat"]  # under 3.75
+    assert delivery.voice_flags(v(3.8), base) == []
+    assert delivery.voice_flags(v(6.3), base) == ["lively"]
+    assert delivery.voice_flags(v(6.2), base) == []
+    assert delivery.voice_flags(v(5, 40), base) == ["trailing"]
+    assert delivery.voice_flags(v(5, 45), {"pitch_range_st": 5.0, "trail_off_pct": 35}) == []  # under 15 over usual
+    assert delivery.voice_flags(v(3.0, 60), base) == ["flat", "trailing"]
+
+
+def test_voice_flags_tolerate_missing():
+    assert delivery.voice_flags(None, None) == []
+    assert delivery.voice_flags({"pitch_range_st": None, "trail_off_pct": None}, {"pitch_range_st": None}) == []
+    assert delivery.voice_fields(None, {"pitch_range_st": 5})["voice_usual"] is None
+
+
+def test_delivery_line_voice_flags():
+    d = {"first_answer_seconds": 70, "target": None, "wpm": None, "i_count": 1, "we_count": 0,
+         "numbers": 1, "fillers": 0, "hedges": 0, "voice_flags": ["lively", "trailing"]}
+    assert delivery.delivery_line(d).endswith("voice: lively, trailing off")
+    d["voice_flags"] = []
+    assert "voice" not in delivery.delivery_line(d)
+    del d["voice_flags"]
+    assert "voice" not in delivery.delivery_line(d)
+
+
+def test_voice_baseline(tmp_path, monkeypatch):
+    from backend import db
+
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init()
+    pack = db.create_pack({"title": "t"})
+    assert db.voice_baseline() is None
+    for i in range(9):
+        v = {"pitch_range_st": 4.0 + i, "loudness_range_db": 10.0, "trail_off_pct": None, "voiced_s": 20}
+        db.add_attempt(f"a{i}", pack["id"], "k", "q", None, "x", 10, None, {"delivery": {"voice": v}})
+    db.add_attempt("none", pack["id"], "k", "q", None, "x", 10, None, {"delivery": {"voice": None}})
+    assert db.voice_baseline() is None  # 9 answers with voice stats
+    db.add_attempt("a9", pack["id"], "k", "q", None, "x", 10, None, {"delivery": {"voice": {"pitch_range_st": 8.0}}})
+    b = db.voice_baseline()
+    assert b["pitch_range_st"] == 8.0 and b["loudness_range_db"] == 10.0 and b["trail_off_pct"] is None
+    assert db.voice_baseline(exclude_attempt="a9") is None

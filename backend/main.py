@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, drill, feedback, gpu, prep, research, stt, tts
+from . import db, delivery, drill, feedback, gpu, prep, research, stt, tts
 from .categories import resolve_category
 from .brain import (
     OPENING_CUE,
@@ -521,6 +521,10 @@ async def drill_attempt(pack_id: str, request: Request):
         raise HTTPException(502, str(exc))
     attempt_id = db.new_attempt_id()
     audio_path = await asyncio.to_thread(_save_drill_audio, attempt_id, audio_bytes) if audio_bytes else None
+    if audio_path:
+        baseline = db.voice_baseline()
+        voice = await asyncio.to_thread(delivery.voice_from_wavs, [audio_path])
+        result["delivery"] = {**result.get("delivery", {}), **delivery.voice_fields(voice, baseline)}
     attempt = db.add_attempt(attempt_id, pack_id, key, question, category, answer, seconds, audio_path, result)
     return {"attempt": _attempt_out(attempt), "previous": _attempt_out(previous)}
 

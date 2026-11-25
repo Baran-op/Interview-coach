@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chevron } from '../components/Dropdown'
-import { api, CATEGORY_LABEL, type AnswerDelivery, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
+import { api, CATEGORY_LABEL, VOICE_FLAG_LABEL, voiceTooltip, type AnswerDelivery, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -303,6 +303,7 @@ export default function Review({ sessionId, onStart }: Props) {
                 </div>
               )}
             </div>
+            {voiceSummary(r.answers) && <p className="small">Voice: {voiceSummary(r.answers)}</p>}
             {r.filler_words.examples.length > 0 && (
               <ul className="muted small">
                 {r.filler_words.examples.map((ex, i) => (
@@ -421,6 +422,17 @@ function FragmentBar({ label, value }: { label: string; value: number }) {
   )
 }
 
+/** "flat in 3 of 7 answers, trailing off in 2" over the answers that have voice stats, or '' if none do. */
+function voiceSummary(answers: { delivery?: AnswerDelivery }[]): string {
+  const measured = answers.filter((a) => a.delivery?.voice)
+  if (measured.length === 0) return ''
+  const count = (f: VoiceFlag) => measured.filter((a) => a.delivery?.voice_flags?.includes(f)).length
+  const bits = (['flat', 'lively', 'trailing'] as VoiceFlag[])
+    .filter((f) => count(f) > 0)
+    .map((f) => `${VOICE_FLAG_LABEL[f]} in ${count(f)}${f === 'flat' ? ` of ${measured.length} answers` : ''}`)
+  return bits.length ? bits.join(', ') : `no flags in ${measured.length} answers`
+}
+
 const mmss = (s: number) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`
 
 /** Per-answer delivery stats; length outside the target is highlighted. */
@@ -438,6 +450,8 @@ function DeliveryLine({ d }: { d: AnswerDelivery }) {
   parts.push({ text: n(d.fillers, 'filler'), bad: d.fillers >= 5 })
   parts.push({ text: n(d.hedges, 'hedge'), bad: d.hedges >= 3 })
   if (d.pauses_over_1s) parts.push({ text: n(d.pauses_over_1s, 'long pause'), bad: true })
+  const voiceTip = voiceTooltip(d)
+  const flags = d.voice_flags ?? []
   return (
     <p className="small delivery-line" title={d.flag ? `This answer was too ${d.flag} for its question type` : undefined}>
       {parts.map((p, i) => (
@@ -446,6 +460,17 @@ function DeliveryLine({ d }: { d: AnswerDelivery }) {
           <span className={p.bad ? 'out-of-target' : undefined}>{p.text}</span>
         </span>
       ))}
+      {flags.length > 0 && (
+        <span title={voiceTip || undefined}>
+          {' · voice: '}
+          {flags.map((f, i) => (
+            <span key={f}>
+              {i > 0 && ', '}
+              <span className="out-of-target">{VOICE_FLAG_LABEL[f]}</span>
+            </span>
+          ))}
+        </span>
+      )}
     </p>
   )
 }

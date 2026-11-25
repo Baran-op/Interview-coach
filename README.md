@@ -131,7 +131,7 @@ The chips under each interviewer message show the expression tags parsed from th
   - the transcript (click a line to jump there);
   - the feedback report: overall score, the top 3 things to fix, filler words, average
     answer length, and for each main question scores from 1 to 5 on relevance, structure
-    (STAR), specificity and evidence, a delivery line (length against the target for the question type, words per minute, I vs we, numbers, fillers, hedges, long pauses) with tips and a stronger model answer;
+    (STAR), specificity and evidence, a delivery line (length against the target for the question type, words per minute, I vs we, numbers, fillers, hedges, long pauses, and voice flags: flat, lively or trailing off, against your own usual) with tips and a stronger model answer;
   - downloads of the recording (.webm) and the report (.md).
 - **The report takes one Claude request per session.** Claude does the judging (scores, tips,
   model answers). Filler words, answer length and the overall score are computed locally, so
@@ -201,6 +201,11 @@ To check how steady the report's scores are, run `python -m scripts.rescore <ses
 anything and prints the spread per answer and criterion (targets: 0.3 overall, 0.5 per answer).
 Each run is one Claude request, so use it sparingly.
 
+Voice flags (flat, lively, trailing off) compare each answer with your own usual, taken from your newest
+40 answers once there are 10; until then fixed thresholds apply. After upgrading, run
+`python -m scripts.backfill_delivery` once to add voice stats to existing reports and drill attempts from
+their saved answer audio. It never calls Claude and can be re-run.
+
 Words missing from Kokoro's dictionary (often company names) are spelled out letter by
 letter. For proper pronunciation, `brew install espeak-ng`: Kokoro then uses espeak for
 those words automatically.
@@ -230,7 +235,7 @@ those words automatically.
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
 | GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale}`; `stale` is true when the JD, CV or company notes changed since it was written |
 | POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape |
-| POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` |
+| POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` (with `voice`, `voice_flags`, `voice_usual` when audio was sent) |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
 | POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s) |
 | POST | `/tts` | `{text, voice?}` -> `{sentences:[...]}`, each shaped like the NDJSON `sentence` event (reads a question aloud) |

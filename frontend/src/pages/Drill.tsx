@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, CATEGORY_LABEL, type Criterion, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
+import { api, CATEGORY_LABEL, VOICE_FLAG_LABEL, voiceTooltip, type Criterion, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
 import { InterviewerPlayer, type Speaker } from '../audio/player'
 import { TurnListener } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
@@ -324,6 +324,17 @@ export default function Drill({ packId, initialQuestion }: Props) {
                       <Bar key={c} label={LABEL[c]} value={result.attempt.result!.scores[c]} />
                     ))}
                   </div>
+                  {(result.attempt.result.delivery?.voice_flags?.length ?? 0) > 0 && (
+                    <p className="small" title={voiceTooltip(result.attempt.result.delivery!) || undefined}>
+                      Voice:{' '}
+                      {result.attempt.result.delivery!.voice_flags!.map((f, i) => (
+                        <span key={f}>
+                          {i > 0 && ', '}
+                          <span className="out-of-target">{VOICE_FLAG_LABEL[f]}</span>
+                        </span>
+                      ))}
+                    </p>
+                  )}
                   {result.previous && result.attempt.result.improved.length > 0 && (
                     <>
                       <strong>Better than last time</strong>
@@ -368,6 +379,9 @@ export default function Drill({ packId, initialQuestion }: Props) {
                             <td>{new Date(a.created_at).toLocaleString()}</td>
                             <td>{fmt(avg)}</td>
                             <td>{avg != null && prev != null ? delta(avg - prev) : ''}</td>
+                            <td title={voiceTooltip(a.result?.delivery ?? {}) || undefined}>
+                              {a.result?.delivery?.voice?.pitch_range_st != null ? `${a.result.delivery.voice.pitch_range_st.toFixed(1)} st` : ''}
+                            </td>
                           </tr>
                         )
                       })}
