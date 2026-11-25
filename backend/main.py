@@ -663,6 +663,22 @@ async def _drill_words(audio_path: str) -> list[dict]:
         return []
 
 
+def _drill_sections(audio_path: str, segments: list | None, words: list | None, baseline: dict | None) -> list[dict]:
+    """Flat stretches of a drill answer's WAV (V11), stored in ``delivery.voice.sections``. No advice is written for
+    a drill answer, so none is marked ``advice_ok``. Never fails the attempt."""
+    try:
+        audio = voice.load_audio(audio_path)
+        if audio is None or audio["stats"] is None:
+            return []
+        secs = voice.turn_sections(audio["track"], {"idx": 0, "segments": segments or None, "words": words or None}, baseline)
+        for s in secs:
+            s["advice_ok"] = False
+        return secs
+    except Exception as exc:
+        log.warning("Flat stretches failed for drill answer: %s", exc)
+        return []
+
+
 @app.post("/packs/{pack_id}/drill/attempts")
 async def drill_attempt(pack_id: str, request: Request):
     """Multipart `audio` (WAV) with `question`, `category`, `seconds`; or JSON {question, category, text, seconds?}."""
@@ -707,24 +723,35 @@ async def drill_attempt(pack_id: str, request: Request):
     category = resolve_category(fields["category"], question, brief.category_keys(current))
     key = drill.question_key(question)
     previous = (db.list_attempts(pack_id, key) or [None])[-1]
-    try:
-        result = await drill.score(pack, question, category, answer, seconds, previous, current)
-    except drill.DrillError as exc:
-        raise HTTPException(502, str(exc))
     attempt_id = db.new_attempt_id()
     audio_path = await asyncio.to_thread(_save_drill_audio, attempt_id, audio_bytes) if audio_bytes else None
+    try:
+        if audio_path:
+            # word offsets are found alongside the scoring request (V4): the flat stretches and face quotes use them
+            result, words = await asyncio.gather(
+                drill.score(pack, question, category, answer, seconds, previous, current), _drill_words(audio_path))
+        else:
+            result, words = await drill.score(pack, question, category, answer, seconds, previous, current), []
+    except drill.DrillError as exc:
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
+        raise HTTPException(502, str(exc))
+    except BaseException:
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
+        raise
     if audio_path:
         baseline = db.voice_baseline()
-        voice = await asyncio.to_thread(delivery.voice_from_wavs, [audio_path])
-        result["delivery"] = {**result.get("delivery", {}), **delivery.voice_fields(voice, baseline)}
+        voice_stats = await asyncio.to_thread(delivery.voice_from_wavs, [audio_path])
+        segments = clean_segments(segments_raw, DRILL_MAX_MS)
+        if voice_stats is not None:
+            voice_stats["sections"] = await asyncio.to_thread(_drill_sections, audio_path, segments, words, baseline)
+        result["delivery"] = {**result.get("delivery", {}), **delivery.voice_fields(voice_stats, baseline)}
         face = clean_face(face_raw, DRILL_MAX_MS)
         if face:
             face_out = delivery.face_fields(face, db.face_baseline())
-            segments = clean_segments(segments_raw, DRILL_MAX_MS)
-            if segments and (face_out["face"] or {}).get("moments"):
-                words = await _drill_words(audio_path)
-                if words:
-                    delivery.add_quotes(face_out, [{"segments": segments, "words": words}])
+            if segments and words and (face_out["face"] or {}).get("moments"):
+                delivery.add_quotes(face_out, [{"segments": segments, "words": words}])
             result["delivery"] = {**result["delivery"], **face_out}
     attempt = db.add_attempt(attempt_id, pack_id, key, question, category, answer, seconds, audio_path, result)
     return {"attempt": _attempt_out(attempt), "previous": _attempt_out(previous)}

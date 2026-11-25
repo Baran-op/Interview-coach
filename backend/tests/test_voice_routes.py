@@ -141,3 +141,71 @@ def test_too_short_still_gives_the_graph(client):
     _write_wav(db.ANSWERS_DIR / sid / "2.wav", _speech(_tone(2.5, 150), 2))
     v = client.get(f"/sessions/{sid}/turns/2/voice").json()
     assert v["reason"] == "too_short" and v["sections"] == [] and v["stats"] is None and len(v["pitch_st"]) > 0
+
+
+# --- V11 backend: a drill attempt stores its flat stretches, words gathered alongside the scoring ---
+
+def _drill_client(client, monkeypatch, order):
+    import asyncio
+
+    from backend import drill, gpu, stt
+
+    async def fake_score(pack, question, category, answer, seconds, previous, current):
+        order.append("score-start")
+        await asyncio.sleep(0.05)
+        order.append("score-end")
+        return {"average": 3.0, "scores": {}, "tips": [], "improved": [], "better_answer": "b", "delivery": {"seconds": 24}}
+
+    async def fake_run(fn, *a):
+        if fn is stt.words_from_wav:
+            order.append("words")
+            return [{"w": f"w{i}", "start_ms": i * 400, "end_ms": i * 400 + 300} for i in range(60)]
+        return "hello there"
+
+    monkeypatch.setattr(drill, "score", fake_score)
+    monkeypatch.setattr(gpu, "run", fake_run)
+    monkeypatch.setattr(stt, "is_ready", lambda: True)
+    monkeypatch.setattr(db, "DRILL_DIR", db.ANSWERS_DIR / "drill")
+    return db.create_pack({"title": "t", "materials": [{"name": "jd", "kind": "job", "source": "paste", "text": "x"}]})
+
+
+def _wav_bytes(tmp_path, x):
+    p = tmp_path / "up.wav"
+    _write_wav(p, x)
+    return p.read_bytes()
+
+
+def test_drill_attempt_stores_sections_and_runs_words_beside_scoring(client, monkeypatch, tmp_path):
+    order = []
+    pack = _drill_client(client, monkeypatch, order)
+    audio = _wav_bytes(tmp_path, _speech(_tone(2.5, 150), 8))
+    r = client.post(f"/packs/{pack['id']}/drill/attempts", data={"question": "Tell me about a go-live", "category": "other",
+                    "seconds": "24", "segments": '[{"start_ms": 0, "end_ms": 24000}]'}, files={"audio": ("a.wav", audio, "audio/wav")})
+    assert r.status_code == 200, r.text
+    assert order.index("words") < order.index("score-end")  # gathered, not run after the scoring request
+    v = r.json()["attempt"]["result"]["delivery"]["voice"]
+    assert v["pitch_range_st"] == 0.0 and len(v["sections"]) == 1
+    s = v["sections"][0]
+    assert s["id"] == "T0.1" and s["words"] and s["advice_ok"] is False and s["session_start_ms"] is not None
+    stored = db.list_attempts(pack["id"])[0]["result"]["delivery"]["voice"]["sections"]
+    assert stored == v["sections"]
+
+
+def test_drill_attempt_too_short_has_no_sections_and_a_failed_score_keeps_no_file(client, monkeypatch, tmp_path):
+    from backend import drill
+
+    order = []
+    pack = _drill_client(client, monkeypatch, order)
+    short = _wav_bytes(tmp_path, _speech(_tone(2.5, 150), 2))
+    r = client.post(f"/packs/{pack['id']}/drill/attempts", data={"question": "q", "category": "other"},
+                    files={"audio": ("a.wav", short, "audio/wav")})
+    assert r.status_code == 200 and r.json()["attempt"]["result"]["delivery"]["voice"] is None
+
+    async def failing(*a):
+        raise drill.DrillError("no")
+
+    monkeypatch.setattr(drill, "score", failing)
+    before = set((db.ANSWERS_DIR / "drill").glob("*.wav"))
+    r = client.post(f"/packs/{pack['id']}/drill/attempts", data={"question": "q2", "category": "other"},
+                    files={"audio": ("a.wav", short, "audio/wav")})
+    assert r.status_code == 502 and set((db.ANSWERS_DIR / "drill").glob("*.wav")) == before

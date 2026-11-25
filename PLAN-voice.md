@@ -483,6 +483,6 @@ rows.
 - [ ] V8. Review Voice tab: tabs and routing, question list, turn blocks, empty states.
 - [ ] V9. `VoiceGraph` canvas: waveform plus pitch, seek/select/loop/zoom, keyboard and touch, word sync.
 - [ ] V10. Flat-section cards: hear it, exact words, advice.
-- [ ] V11. Try again in Drill with "Last time" box and old-vs-new pitch comparison.
+- [x] V11 (backend part: sections on the attempt, words alongside scoring). Try again in Drill with "Last time" box and old-vs-new pitch comparison.
 - [ ] V12 (later). Drill graphs.
 - [ ] V13. Docs (README, SPEC, CLAUDE.md) and an end-to-end check on one real interview.

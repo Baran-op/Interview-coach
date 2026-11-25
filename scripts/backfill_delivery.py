@@ -62,8 +62,11 @@ def main() -> None:
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))
     for a in attempts:
         res = a["result"]
-        voice = delivery.voice_from_wavs([a["audio_path"]])
-        res["delivery"] = {**(res.get("delivery") or {}), **delivery.voice_fields(voice, None)}
+        old_sections = ((res.get("delivery") or {}).get("voice") or {}).get("sections")  # kept: they carry the words
+        voice_stats = delivery.voice_from_wavs([a["audio_path"]])
+        if voice_stats is not None and old_sections is not None:
+            voice_stats["sections"] = old_sections
+        res["delivery"] = {**(res.get("delivery") or {}), **delivery.voice_fields(voice_stats, None)}
         db.update_attempt_result(a["id"], res)
     # Pass 2: flags against the baseline, leaving each answer's own session or attempt out of it.
     flagged = 0
@@ -87,7 +90,11 @@ def main() -> None:
     for a in attempts:
         res = a["result"]
         d = res["delivery"]
-        d.update(delivery.voice_fields(d.get("voice"), db.voice_baseline(exclude_attempt=a["id"])))
+        base = db.voice_baseline(exclude_attempt=a["id"])
+        d.update(delivery.voice_fields(d.get("voice"), base))
+        if d.get("voice") and "sections" not in d["voice"]:  # no stored stretches: find them now (no words are kept for a drill WAV)
+            audio = voice.load_audio(a["audio_path"])
+            d["voice"]["sections"] = [{**s, "advice_ok": False} for s in voice.turn_sections(audio["track"], {"idx": 0}, base)] if audio and audio["stats"] else []
         flagged += bool(d["voice_flags"])
         db.update_attempt_result(a["id"], res)
     print(f"{len(reports)} reports and {len(attempts)} drill attempts with audio updated; {flagged} answers flagged")
