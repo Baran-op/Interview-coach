@@ -28,11 +28,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
+import numpy as np
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import brief, db, delivery, drill, feedback, gpu, materials, prep, research, stt, tts
+from . import brief, db, delivery, drill, feedback, gpu, materials, prep, research, stt, tts, voice
 from .categories import resolve_category
 from .face import clean_face
 from .segments import clean_segments
@@ -957,6 +958,83 @@ async def session_turns(session_id: str):
     if not db.get_session(session_id):
         raise HTTPException(404, "Session not found")
     return db.list_turns(session_id)
+
+
+def _answer_wav(session_id: str, idx: int) -> tuple[dict, dict, Path]:
+    """The session row, the turn row and the WAV path of an answer. 404 if the session or the turn is missing.
+    The path is built from the stored rows, never from the URL text."""
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    turn = next((t for t in db.list_turns(session["id"]) if t["idx"] == idx), None)
+    if not turn:
+        raise HTTPException(404, "Turn not found")
+    return session, turn, db.ANSWERS_DIR / session["id"] / f"{int(turn['idx'])}.wav"
+
+
+@app.get("/sessions/{session_id}/turns/{idx}/audio")
+async def get_turn_audio(session_id: str, idx: int):
+    """One answer's saved WAV (byte ranges supported, so seeking works). 404 when there is none."""
+    _, _, path = _answer_wav(session_id, idx)
+    if not path.exists():
+        raise HTTPException(404, "No audio was saved for this turn")
+    return FileResponse(path, media_type="audio/wav")
+
+
+def _stored_sections(report: dict | None, turns: list[dict], idx: int) -> list[dict] | None:
+    """The flat sections the report stored for a turn (None: no report, or one written before voice sections)."""
+    answers = (report or {}).get("answers") or []
+    for a in answers:
+        if idx in [t["idx"] for t in delivery.answer_turns(a, answers, turns)]:
+            stored = ((a.get("delivery") or {}).get("voice") or {}).get("sections")
+            return None if stored is None else [s for s in stored if s.get("turn_idx") == idx]
+    return None
+
+
+@app.get("/sessions/{session_id}/turns/{idx}/voice")
+async def get_turn_voice(session_id: str, idx: int):
+    """The Voice tab's data for one answer: pitch track, usual band, segments, words and flat sections.
+    Computed on demand from the WAV (an in-memory LRU of 32 serves repeat views); nothing is stored here
+    except word offsets found for an older session."""
+    session, turn, path = _answer_wav(session_id, idx)
+    if turn["speaker"] != "candidate":
+        raise HTTPException(404, "That turn is not an answer")
+    out = {"duration_ms": None, "frame_ms": int(delivery.FRAME_S * 1000), "pitch_st": [], "center_hz": None, "usual": None,
+           "segments": turn.get("segments"), "joins": voice.joins(turn.get("segments")), "words": turn.get("words"),
+           "words_pending": False, "sections": [], "sections_stored": False, "stats": None, "reason": None}
+    audio = await asyncio.to_thread(voice.load_audio, path)
+    if audio is None:
+        out["reason"] = "no_audio" if turn.get("segments") or path.exists() else "typed"
+        return out
+    baseline = db.voice_baseline(exclude_session=session["id"])
+    if turn.get("words") is None:
+        if LIVE or session["id"] in REPORT_TASKS:
+            out["words_pending"] = True  # an interview (or this report) owns the MLX thread's time
+        else:
+            try:
+                turn["words"] = await gpu.run(stt.words_from_wav, path)
+                db.set_turn_words(session["id"], turn["idx"], turn["words"])
+            except Exception as exc:  # no model yet, or bad audio: the graph still works
+                log.warning("Word timestamps failed for %s turn %s: %s", session["id"], idx, exc)
+        out["words"] = turn.get("words")
+    track, stats = audio["track"], audio["stats"]
+    pitched = track["f0_hz"][~np.isnan(track["f0_hz"])]
+    centre = (baseline or {}).get("center_hz") or (float(np.median(pitched)) if len(pitched) else None)
+    out.update({
+        "duration_ms": audio["duration_ms"],
+        "pitch_st": voice.pitch_payload(track, centre),
+        "center_hz": round(centre, 1) if centre else None,
+        "usual": {"p10_st": baseline["p10_st"], "p90_st": baseline["p90_st"]}
+        if baseline and baseline.get("p10_st") is not None and baseline.get("p90_st") is not None else None,
+        "stats": stats,
+    })
+    stored = _stored_sections(((db.get_report(session["id"]) or {}).get("report")), db.list_turns(session["id"]), idx)
+    if stored is not None:
+        out["sections"], out["sections_stored"] = stored, True
+    elif stats is not None:
+        out["sections"] = voice.turn_sections(track, turn, baseline)
+    out["reason"] = "too_short" if stats is None else None
+    return out
 
 
 @app.post("/sessions/{session_id}/recording")

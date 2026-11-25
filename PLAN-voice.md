@@ -479,7 +479,7 @@ rows.
 - [x] V5. Usual-range baseline keys (`center_hz`, `p10_st`, `p90_st`, `window_range_st`) plus backfill.
 - [x] V6. Voice evidence in the transcript, `{voice_rules}` slot, `voice_advice` schema, `normalise`
       checks, new goldens, rescore/markdown/backfill.
-- [ ] V7. Routes: turn audio (ranges) and turn voice track (on demand, LRU, lazy words).
+- [x] V7. Routes: turn audio (ranges) and turn voice track (on demand, LRU, lazy words).
 - [ ] V8. Review Voice tab: tabs and routing, question list, turn blocks, empty states.
 - [ ] V9. `VoiceGraph` canvas: waveform plus pitch, seek/select/loop/zoom, keyboard and touch, word sync.
 - [ ] V10. Flat-section cards: hear it, exact words, advice.

@@ -307,6 +307,8 @@ those words automatically.
 | POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms,t_listen_ms?}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
 | POST | `/sessions/{id}/recording` | Multipart `recording` (.webm) |
 | GET | `/sessions/{id}/recording` | The recording (range requests supported for seeking; `?download=1` to save) |
+| GET | `/sessions/{id}/turns/{idx}/audio` | One answer's saved WAV (`audio/wav`, range requests supported). 404 if the session, the turn or the file is missing |
+| GET | `/sessions/{id}/turns/{idx}/voice` | The Voice tab's data for one spoken answer, computed on demand from its WAV (no Claude request): `{duration_ms, frame_ms: 30, pitch_st: [number or null per frame, semitones from usual centre or this answer's median], center_hz, usual: {p10_st, p90_st} or null, segments, joins: [{wav_ms, cut_ms}], words, words_pending, sections, sections_stored, stats, reason: null / typed / no_audio / too_short}`. `sections` are the report's stored flat stretches when it has them, else computed now. Missing word offsets are found and saved for older sessions, unless an interview is live (`words_pending: true`). 404 for an interviewer turn |
 | GET | `/sessions/{id}/report` | `{status: pending/ready/error, report, report_md, error}` |
 | POST | `/sessions/{id}/report` | Write the report again (one more Claude request) |
 | GET | `/sessions/{id}/report.md` | Report as a Markdown download |

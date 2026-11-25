@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import OrderedDict
 from pathlib import Path
 
 log = logging.getLogger("interview-coach.voice")
@@ -226,6 +227,45 @@ def _fmt_time(ms: float) -> str:
     return delivery._mmss(ms / 1000)
 
 
+_CACHE_SIZE = 32
+_CACHE: "OrderedDict[tuple, dict | None]" = OrderedDict()
+
+
+def load_audio(path) -> dict | None:
+    """``{"track": pitch_track, "stats": voice_stats | None, "duration_ms"}`` for one answer WAV, or None when it
+    is missing or unreadable. Cached in memory (an LRU of 32, keyed by path and modification time)."""
+    path = Path(path)
+    try:
+        key = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        return None
+    if key in _CACHE:
+        _CACHE.move_to_end(key)
+        return _CACHE[key]
+    wav = delivery.read_wav(path)
+    track = delivery.pitch_track(*wav) if wav else None
+    entry = None if wav is None or track is None else {
+        "track": track, "stats": delivery.voice_stats(*wav), "duration_ms": int(round(len(wav[0]) / wav[1] * 1000))}
+    _CACHE[key] = entry
+    while len(_CACHE) > _CACHE_SIZE:
+        _CACHE.popitem(last=False)
+    return entry
+
+
+def turn_sections(track: dict, turn: dict, baseline: dict | None = None) -> list[dict]:
+    """The flat sections of one spoken turn, with everything the report and the Voice tab need (see ``turn_evidence``)."""
+    segs = turn.get("segments")
+    secs = flat_sections(track, joins(segs), baseline, turn["idx"], turn.get("words"))
+    for s in secs:
+        s["turn_idx"] = turn["idx"]
+        s["session_start_ms"] = _round(wav_to_session(s["start_ms"], segs))
+        s["session_end_ms"] = _round(wav_to_session(s["end_ms"], segs))
+        s["provisional"] = THRESHOLDS_PROVISIONAL
+        s["words"] = words_in(turn.get("words"), s["start_ms"], s["end_ms"])
+        s["advice_ok"] = s["advice_ok"] and bool(s["words"])  # advice quotes real words: none, no advice
+    return secs
+
+
 def turn_evidence(turns: list[dict], audio_dir, baseline: dict | None = None) -> dict[int, dict]:
     """Voice evidence per spoken candidate turn, computed locally before the report request.
 
@@ -241,21 +281,11 @@ def turn_evidence(turns: list[dict], audio_dir, baseline: dict | None = None) ->
         if t.get("speaker") != "candidate":
             continue
         try:
-            wav = delivery.read_wav(Path(audio_dir) / f"{t['idx']}.wav")
-            if wav is None:
+            audio = load_audio(Path(audio_dir) / f"{t['idx']}.wav")
+            if audio is None:
                 continue
-            track = delivery.pitch_track(*wav)
-            stats = delivery.voice_stats(*wav)
-            segs = t.get("segments")
-            secs = flat_sections(track, joins(segs), baseline, t["idx"], t.get("words"))
-            for s in secs:
-                s["turn_idx"] = t["idx"]
-                s["session_start_ms"] = _round(wav_to_session(s["start_ms"], segs))
-                s["session_end_ms"] = _round(wav_to_session(s["end_ms"], segs))
-                s["provisional"] = THRESHOLDS_PROVISIONAL
-                s["words"] = words_in(t.get("words"), s["start_ms"], s["end_ms"])
-                s["advice_ok"] = s["advice_ok"] and bool(s["words"])  # advice quotes real words: none, no advice
-            out[t["idx"]] = {"stats": stats, "flags": delivery.voice_flags(stats, baseline),
+            secs = turn_sections(audio["track"], t, baseline)
+            out[t["idx"]] = {"stats": audio["stats"], "flags": delivery.voice_flags(audio["stats"], baseline),
                              "usual": (baseline or {}).get("pitch_range_st"), "sections": secs}
             all_sections += secs
         except Exception as exc:  # audio trouble never fails a report
@@ -341,3 +371,11 @@ def answer_sections(mine: list[dict], evidence: dict | None, advice: list[dict] 
                 s["advice"] = {k: by_id[s["id"]][k] for k in ("stress", "say_it", "why")}
             out.append(s)
     return out
+
+
+def pitch_payload(track: dict, centre_hz: float | None) -> list:
+    """The pitch line of the Voice tab: semitones from ``centre_hz`` (None where unpitched), one decimal."""
+    if not centre_hz:
+        return [None] * len(track["f0_hz"])
+    st = delivery.to_semitones(track["f0_hz"], centre_hz)
+    return [None if v != v else round(float(v), 1) + 0.0 for v in st]
