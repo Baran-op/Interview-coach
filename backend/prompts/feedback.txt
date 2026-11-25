@@ -12,10 +12,10 @@ Candidate profile (CV):
 The transcript below was made by speech recognition, so ignore small transcription errors. Each line starts with its turn number, e.g. [#3 Candidate, 42 s].
 
 How to score:
-- Make one entry in "answers" per MAIN question the interviewer asked. Fold the interviewer's follow-up questions and the candidate's follow-up answers into that main question's entry. Skip the greeting, small talk and the closing "do you have any questions for me" part.
+- Make one entry in "answers" per MAIN question the interviewer asked. This includes the opening "tell me about yourself" and the "why this role / why this company" question: score them like any other. Fold the interviewer's follow-up questions and the candidate's follow-up answers into that main question's entry. Skip the greeting, small talk and the closing part. Also judge the questions the candidate asked at the end, in "summary" only (not as an entry).
 - Score each answer from 1 to 5 on four criteria (1 = missing or poor, 3 = adequate, 5 = excellent):
   - relevance: answers the question that was asked and connects to the job's requirements.
-  - structure: clear and easy to follow. For behavioural questions, use the STAR shape (Situation, Task, Action, Result). For technical or case questions, a clear approach, steps and conclusion.
+  - structure: clear and easy to follow. For behavioural questions, use the STAR shape (Situation, Task, Action, Result). For "tell me about yourself", a short present, past, future story tied to this job (about 1 to 2 minutes). For "why this company", specific reasons that show research. For technical or case questions, a clear approach, steps and conclusion.
   - specificity: concrete details, the candidate's own role ("I" rather than "we"), names of tools, systems and stakeholders.
   - evidence: results, numbers and proof that back up the claims.
 - Be strict and consistent. A 5 is rare. If the candidate needed follow-ups to get the details out, that counts against specificity and evidence.
