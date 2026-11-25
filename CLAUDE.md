@@ -28,8 +28,7 @@ Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avat
 plus the coaching improvements and the voice and face delivery stats (Phase H, H1-H8). Their plans (`PLAN.md`,
 `PLAN-energy.md`) are finished and removed; they're in git history. Code comments citing them refer to that history.
 Next: Phase I in `PLAN-brief.md` (materials in, interview brief out, so any profession works). Work through its
-build order, one commit per item, ticking the item's checkbox in the same commit. It is awaiting the user's review
-before I0 starts.
+build order, one commit per item, ticking the item's checkbox in the same commit.
 
 ## Stack and layout
 
@@ -51,6 +50,7 @@ npm run dev                                                         # repo root:
 source .venv/bin/activate && uvicorn backend.main:app --port 8000   # backend on its own
 cd frontend && npx tsc -b                                           # type-check frontend
 pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend unit tests (pure functions only)
+python -m backend.tests.golden.make                                 # regenerate golden prompts (by hand, only on purpose)
 ```
 
 ## Conventions and gotchas
@@ -70,4 +70,7 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `RESEARCH_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
 - Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper. Ending early asks Score / Discard / Keep going; Discard sends `/end` with `score:false` then `DELETE /sessions/{id}`; the beacon and reaper always score.
   The Interview page keeps the recording blob in memory and `saveSession()` is retryable (Retry / Download buttons).
+- Golden prompts: `backend/tests/golden/` holds today's rendered interviewer/feedback/drill/prep prompts and the
+  report/drill JSON schemas for two fictional packs (`fixtures.py`); `test_golden.py` compares byte for byte. With no
+  brief nothing may change; regenerate with `python -m backend.tests.golden.make` only when a change is intended.
 - Full API table and usage docs live in `README.md`; don't duplicate them here.
