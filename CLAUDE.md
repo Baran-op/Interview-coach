@@ -26,7 +26,8 @@ Personal use only, localhost, uses the user's Claude subscription (never an API 
 
 Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews).
 Next: the coaching improvements in `PLAN.md`. Work through its build order, one commit per item, and tick the
-item's checkbox in `PLAN.md` in the same commit that builds it.
+item's checkbox in `PLAN.md` in the same commit that builds it. Then the voice and face delivery stats in
+`PLAN-energy.md` (Phase H), the same way.
 
 ## Stack and layout
 
@@ -39,7 +40,8 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`, `src/index.css` (the whole design system).
 - `scripts/` hand-run tools. `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
-- `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist.
+- `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist;
+  `PLAN-energy.md` the energy and presence plan (voice pitch/loudness/trail-off, then webcam eye contact and expressiveness, all local).
 
 ## Commands
 
