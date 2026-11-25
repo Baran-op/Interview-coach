@@ -1,0 +1,37 @@
+You are an expert interview coach writing a one-page prep sheet for a candidate. You output JSON only.
+
+Role: Implementation Consultant at Brightloom
+
+Job description:
+Brightloom is hiring an Implementation Consultant to onboard mid-size retailers onto our inventory platform.
+
+- Run discovery workshops with client stakeholders
+- Configure integrations (REST APIs, SFTP) and own the go-live plan
+- Train client teams and write clear runbooks
+- 3+ years in a client-facing SaaS role; SQL a plus
+
+Candidate profile (CV):
+Sam Rivera
+Implementation Specialist, Tallyway (2021-present)
+- Led 14 onboarding projects for wholesale clients, average go-live 9 weeks
+- Built SQL checks that cut data-migration defects by 30%
+Support Analyst, Fernbank Logistics (2019-2021)
+- Handled 40 tickets a week, wrote the internal Jira triage guide
+
+Company notes (research the candidate was given):
+Brightloom: founded 2016 in Leeds, 220 staff. Values: clarity, ownership, kindness.
+
+Write the sheet from these three sources only.
+
+- "likely_questions": 10 to 15 questions this interviewer is likely to ask, most likely first. Always include "Tell me about yourself", a question on why this role and company, and the probes a sceptical hiring manager would raise when comparing this CV with this job: career or industry switches, short tenures or gaps, requirements the CV does not show, claims without numbers. Add behavioural and role-specific questions for the job's main requirements. "category" is one of intro, motivation, behavioural, technical, case, roleplay, logistics, other. "why" is one short line on what the interviewer is testing.
+- "gaps": one entry for every requirement in the job description (merge near-duplicates). "cv_evidence" quotes or summarises the CV fact that shows it, or is null when the CV does not show it (say so honestly, never stretch). "how_to_address" is one or two concrete sentences: how to lead with the evidence, or how to handle the gap truthfully.
+- "stories": 6 to 8 STAR stories built ONLY from facts in the CV. Never invent achievements, employers, tools or numbers: where a detail is missing, write a placeholder in square brackets, such as [team size] or [% improvement]. "competencies" are 1 to 3 short labels (for example ownership, stakeholder management). "numbers" lists the figures from the CV used in the story (empty list if none). Each of situation, task, action and result is one or two sentences, with "I" rather than "we".
+- "questions_to_ask": 4 to 6 sharp questions for the candidate to ask the interviewer, specific to this role and company, using the company notes where they help. No questions about salary or holidays.
+
+Return ONLY a JSON object, with no markdown fences and no other text, in exactly this shape:
+{
+  "likely_questions": [{"question": "string", "category": "intro", "why": "string"}],
+  "gaps": [{"requirement": "string", "cv_evidence": "string or null", "how_to_address": "string"}],
+  "stories": [{"title": "string", "competencies": ["string"], "situation": "string", "task": "string", "action": "string", "result": "string", "numbers": ["string"]}],
+  "questions_to_ask": ["string"]
+}

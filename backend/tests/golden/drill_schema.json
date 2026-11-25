@@ -1,0 +1,57 @@
+{
+  "properties": {
+    "better_answer": {
+      "type": "string"
+    },
+    "improved": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "scores": {
+      "properties": {
+        "evidence": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "relevance": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "specificity": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "structure": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "relevance",
+        "structure",
+        "specificity",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "tips": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "scores",
+    "tips",
+    "improved",
+    "better_answer"
+  ],
+  "type": "object"
+}
