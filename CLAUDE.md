@@ -25,6 +25,8 @@ job description, the user's CV and company notes; the session is recorded and sc
 Personal use only, localhost, uses the user's Claude subscription (never an API key). See `SPEC.md`.
 
 Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avatar, history/packs/timed interviews).
+Next: the coaching improvements in `PLAN.md`. Work through its build order, one commit per item, and tick the
+item's checkbox in `PLAN.md` in the same commit that builds it.
 
 ## Stack and layout
 
@@ -34,6 +36,7 @@ Status: Milestones 1-5 built (text interviewer, voice, recording/review, 3D avat
 - `frontend/` Vite + React + TypeScript. `src/pages`, `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
 - `data/` SQLite db and recordings (git-ignored).
+- `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist.
 
 ## Commands
 
