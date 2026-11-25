@@ -214,7 +214,13 @@ Each run is one Claude request, so use it sparingly.
 Voice flags (flat, lively, trailing off) compare each answer with your own usual, taken from your newest
 40 answers once there are 10; until then fixed thresholds apply. After upgrading, run
 `python -m scripts.backfill_delivery` once to add voice stats to existing reports and drill attempts from
-their saved answer audio. It never calls Claude and can be re-run.
+their saved answer audio and stored face stats. It never calls Claude and can be re-run.
+
+Face flags (mostly looking down, low eye contact, still face) show in Review next to each answer's eye contact
+percentage and in the Markdown download. Looking down and low eye contact use fixed limits (30% and 60%); still
+face compares with your own usual expressiveness once 10 answers have it. Long look-aways and still stretches are
+listed under each answer with a play button, and shaded on the recording's timeline. Face data exists only for
+sessions recorded with the camera tracking on; other sessions show no face line.
 
 Words missing from Kokoro's dictionary (often company names) are spelled out letter by
 letter. For proper pronunciation, `brew install espeak-ng`: Kokoro then uses espeak for

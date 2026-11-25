@@ -150,7 +150,54 @@ export function voiceTooltip(d: VoiceDelivery): string {
   return parts.join(' · ')
 }
 
-export interface AnswerDelivery extends VoiceDelivery {
+export interface FaceMoment {
+  kind: 'down' | 'away' | 'still'
+  start_ms: number
+  end_ms: number
+}
+
+export interface FaceStatsSummary {
+  on_screen_pct: number | null
+  looked_down_pct: number | null
+  expressiveness: number | null
+  face_found_pct: number | null
+  frames: number
+  t_start_ms: number
+  t_end_ms: number
+  moments?: FaceMoment[]
+}
+
+export type FaceFlag = 'looking_down' | 'low_eye_contact' | 'still'
+
+/** The face part of a delivery object; absent on reports written before face stats existed, or with no camera. */
+export interface FaceDelivery {
+  face?: FaceStatsSummary | null
+  face_flags?: FaceFlag[]
+  face_usual?: { expressiveness: number | null } | null
+}
+
+export const FACE_FLAG_LABEL: Record<FaceFlag, string> = {
+  looking_down: 'mostly looking down',
+  low_eye_contact: 'low eye contact',
+  still: 'still face',
+}
+export const FACE_MOMENT_LABEL: Record<FaceMoment['kind'], string> = { down: 'Looked down', away: 'Looked away', still: 'Still face' }
+
+/** "looked down 35% of the answer · expressiveness 2.0 (your usual 5.0)", or '' with no face stats. */
+export function faceTooltip(d: FaceDelivery): string {
+  const f = d.face
+  if (!f) return ''
+  const parts: string[] = []
+  if (f.on_screen_pct != null) parts.push(`on screen ${Math.round(f.on_screen_pct)}% of the answer`)
+  if (f.looked_down_pct != null) parts.push(`looked down ${Math.round(f.looked_down_pct)}%`)
+  if (f.expressiveness != null) {
+    const u = d.face_usual?.expressiveness
+    parts.push(`expressiveness ${f.expressiveness.toFixed(1)}` + (u != null ? ` (your usual ${u.toFixed(1)})` : ''))
+  }
+  return parts.join(' · ')
+}
+
+export interface AnswerDelivery extends VoiceDelivery, FaceDelivery {
   seconds: number
   first_answer_seconds: number
   wpm: number | null

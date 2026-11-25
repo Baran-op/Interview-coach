@@ -152,3 +152,76 @@ def test_voice_baseline(tmp_path, monkeypatch):
     b = db.voice_baseline()
     assert b["pitch_range_st"] == 8.0 and b["loudness_range_db"] == 10.0 and b["trail_off_pct"] is None
     assert db.voice_baseline(exclude_attempt="a9") is None
+
+
+def _face(frames=100, on=80.0, down=5.0, expr=4.0, found=100.0, spans=(), windows=(), t0=0, t1=60000):
+    return {"t_start_ms": t0, "t_end_ms": t1, "frames": frames, "on_screen_pct": on, "looked_down_pct": down,
+            "expressiveness": expr, "face_found_pct": found, "away_spans": list(spans), "expr_windows": list(windows)}
+
+
+def test_combine_face_weights_by_frames():
+    c = delivery.combine_face([_face(frames=100, on=100.0), _face(frames=300, on=60.0, t0=60000, t1=90000)])
+    assert c["on_screen_pct"] == 70.0
+    assert c["frames"] == 400 and c["t_start_ms"] == 0 and c["t_end_ms"] == 90000
+
+
+def test_combine_face_tolerates_missing_and_null():
+    assert delivery.combine_face([]) is None
+    assert delivery.combine_face([None]) is None
+    nulls = _face(frames=10, on=None, down=None, expr=None, found=20.0)
+    c = delivery.combine_face([nulls])
+    assert c["on_screen_pct"] is None and c["expressiveness"] is None
+    c = delivery.combine_face([nulls, _face(frames=100, on=50.0)])  # the null turn is left out of the stat
+    assert c["on_screen_pct"] == 50.0
+
+
+def test_face_flags():
+    assert delivery.face_flags(_face(down=30.0), None) == ["looking_down"]
+    assert delivery.face_flags(_face(down=29.9), None) == []
+    assert delivery.face_flags(_face(on=59.9), None) == ["low_eye_contact"]
+    assert delivery.face_flags(_face(on=60.0), None) == []
+    assert delivery.face_flags(_face(on=50.0, down=40.0), None) == ["looking_down", "low_eye_contact"]
+    assert delivery.face_flags(_face(expr=0.1), None) == []  # no baseline, no still flag
+    assert delivery.face_flags(_face(expr=3.4), {"expressiveness": 5.0}) == ["still"]  # under 3.5
+    assert delivery.face_flags(_face(expr=3.5), {"expressiveness": 5.0}) == []
+    assert delivery.face_flags(None, {"expressiveness": 5.0}) == []
+    assert delivery.face_flags(_face(on=None, down=None, expr=None), {"expressiveness": 5.0}) == []
+
+
+def test_face_moments_away_spans_and_still():
+    spans = [{"start_ms": 42000, "end_ms": 51000, "kind": "down"}]
+    wins = [{"start_ms": s, "value": 1.0} for s in range(0, 25000, 5000)] + [{"start_ms": 25000, "value": 4.0}]
+    face = _face(spans=spans, windows=wins)
+    ms = delivery.face_moments(face, {"expressiveness": 4.0})
+    assert ms == [{"kind": "still", "start_ms": 0, "end_ms": 25000}, {"kind": "down", "start_ms": 42000, "end_ms": 51000}]
+    # no baseline: only the away spans
+    assert delivery.face_moments(face, None) == [{"kind": "down", "start_ms": 42000, "end_ms": 51000}]
+
+
+def test_face_moments_still_needs_20s_of_consecutive_windows():
+    base = {"expressiveness": 4.0}
+    short = [{"start_ms": s, "value": 1.0} for s in (0, 5000, 10000)]  # 15 s
+    assert delivery.face_moments(_face(windows=short), base) == []
+    gap = [{"start_ms": s, "value": 1.0} for s in (0, 5000, 15000, 20000)]  # broken by a missing window
+    assert delivery.face_moments(_face(windows=gap), base) == []
+    edge = [{"start_ms": s, "value": 2.0} for s in (0, 5000, 10000, 15000)]  # 2.0 is not under half of 4.0
+    assert delivery.face_moments(_face(windows=edge), base) == []
+    four = [{"start_ms": s, "value": 1.9} for s in (0, 5000, 10000, 15000)]
+    assert [m["kind"] for m in delivery.face_moments(_face(windows=four), base)] == ["still"]
+
+
+def test_face_fields_and_line_without_face():
+    assert delivery.face_fields(None, None) == {"face": None, "face_flags": [], "face_usual": None}
+    d = {"first_answer_seconds": 70, "target": None, "wpm": 130, "i_count": 1, "we_count": 0,
+         "numbers": 1, "fillers": 0, "hedges": 0}
+    assert "eye contact" not in delivery.delivery_line(d)
+    d.update(delivery.face_fields(_face(on=58.0, down=35.0, expr=2.0), {"expressiveness": 5.0}))
+    assert delivery.delivery_line(d).endswith("eye contact 58% · mostly looking down · still face")
+    assert d["face_usual"] == {"expressiveness": 5.0}
+
+
+def test_face_moment_text_and_markdown():
+    m = {"kind": "down", "start_ms": 42000, "end_ms": 51000}
+    assert delivery.face_moment_text(m) == "Looked down 0:42–0:51 (9 s)"
+    assert feedback._face_moments_md({"face": {"moments": [m]}}) == ["- Looked down 0:42–0:51 (9 s)", ""]
+    assert feedback._face_moments_md(None) == [] and feedback._face_moments_md({"face": None}) == []

@@ -291,6 +291,11 @@ summary .section-title { margin: 0; flex: none; }
 .review-head .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .player video { width: 100%; border-radius: var(--radius-sm); background: #000; display: block; }
 .player video.audio-only { height: 54px; background: transparent; }
+.moment-bands { position: relative; height: 10px; margin-top: 8px; background: var(--surface-2, transparent); border-radius: 999px; }
+.moment-band { position: absolute; top: 0; height: 100%; min-width: 4px; padding: 0; border: 0; border-radius: 999px; background: var(--ink); opacity: 0.35; cursor: pointer; }
+.moment-band:hover { opacity: 0.7; }
+.moments ul { margin: 4px 0 8px; padding-left: 18px; }
+.moments li button { padding: 0 8px; line-height: 1.4; }
 .markers { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
 .marker { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; }
 .marker.active { background: var(--ink); border-color: var(--ink); color: var(--ink-text); }

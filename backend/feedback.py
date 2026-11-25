@@ -232,6 +232,13 @@ def _delivery_line(d: dict) -> str:
     return delivery_line(d)
 
 
+def _face_moments_md(d: dict | None) -> list[str]:
+    from .delivery import face_moment_text
+
+    moments = ((d or {}).get("face") or {}).get("moments") or []
+    return [*[f"- {face_moment_text(m)}" for m in moments], ""] if moments else []
+
+
 def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | None = None) -> str:
     from datetime import datetime
 
@@ -272,6 +279,7 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
             f"**What you said:** {a['answer_summary']}",
             "",
             *([f"**Delivery:** {_delivery_line(a['delivery'])}", ""] if a.get("delivery") else []),
+            *_face_moments_md(a.get("delivery")),
             *[f"- {t}" for t in a["tips"]],
             "",
             "**A stronger answer:**",
@@ -311,7 +319,8 @@ async def generate(session_id: str) -> None:
         from . import delivery  # imported here: delivery imports this module
 
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
-                                 db.voice_baseline(exclude_session=session_id))
+                                 db.voice_baseline(exclude_session=session_id),
+                                 db.face_baseline(exclude_session=session_id))
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

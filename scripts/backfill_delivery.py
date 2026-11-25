@@ -3,7 +3,8 @@
     python -m scripts.backfill_delivery
 
 Every report's per-answer ``delivery`` is rebuilt from its transcript and ``data/answers/<session>/``;
-every drill attempt with audio gets its voice fields. Scores and text are left as they are. Runs in two
+every drill attempt with audio gets its voice fields. Face stats (from each turn's stored `face_json`) are
+combined per answer, with flags and moments, in the same passes. Scores and text are left as they are. Runs in two
 passes so the voice baseline exists before any flags are set (PLAN-energy.md, 1c).
 """
 
@@ -45,11 +46,13 @@ def main() -> None:
     flagged = 0
     for s, report in reports:
         base = db.voice_baseline(exclude_session=s["id"])
+        face_base = db.face_baseline(exclude_session=s["id"])
         for ans in report["answers"]:
             d = ans.get("delivery")
             if d:
                 d.update(delivery.voice_fields(d.get("voice"), base))
-                flagged += bool(d["voice_flags"])
+                d.update(delivery.face_fields(d.get("face"), face_base))
+                flagged += bool(d["voice_flags"] or d.get("face_flags"))
         turns = db.list_turns(s["id"])
         pack = db.get_pack(s["pack_id"]) or {}
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))

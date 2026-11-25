@@ -280,6 +280,119 @@ def voice_from_wavs(paths) -> dict | None:
     return voice_stats(np.concatenate(parts), rate)
 
 
+FACE_FLAG_LABEL = {"looking_down": "mostly looking down", "low_eye_contact": "low eye contact", "still": "still face"}
+FACE_MOMENT_LABEL = {"down": "Looked down", "away": "Looked away", "still": "Still face"}
+_STILL_WINDOW_MS = 5000
+_STILL_MIN_MS = 20_000
+_FACE_MIN_FOUND_PCT = 50
+
+
+def combine_face(faces: list[dict | None]) -> dict | None:
+    """One answer's face stats from its turns' stored face objects, each percentage weighted by frames.
+
+    Turns whose stat is null (face found in under half the frames) are left out of that stat. Spans and
+    windows are joined in time order. None when no turn has face data.
+    """
+    faces = [f for f in faces if isinstance(f, dict)]
+    if not faces:
+        return None
+    frames = sum(f.get("frames") or 0 for f in faces)
+
+    def wavg(key: str) -> float | None:
+        pairs = [(f[key], f.get("frames") or 0) for f in faces if f.get(key) is not None]
+        if not pairs:
+            return None
+        w = sum(n for _, n in pairs)
+        return sum(v * n for v, n in pairs) / w if w else sum(v for v, _ in pairs) / len(pairs)
+
+    found = wavg("face_found_pct")
+    ok = found is not None and found >= _FACE_MIN_FOUND_PCT
+    stat = lambda k, nd: (round(v, nd) if (v := wavg(k)) is not None and ok else None)  # noqa: E731
+    return {
+        "t_start_ms": min(f.get("t_start_ms", 0) for f in faces),
+        "t_end_ms": max(f.get("t_end_ms", 0) for f in faces),
+        "on_screen_pct": stat("on_screen_pct", 1),
+        "looked_down_pct": stat("looked_down_pct", 1),
+        "expressiveness": stat("expressiveness", 2),
+        "face_found_pct": round(found, 1) if found is not None else None,
+        "frames": frames,
+        "away_spans": sorted((s for f in faces for s in f.get("away_spans") or []), key=lambda s: s["start_ms"]),
+        "expr_windows": sorted((w for f in faces for w in f.get("expr_windows") or []), key=lambda w: w["start_ms"]),
+    }
+
+
+def face_flags(face: dict | None, baseline: dict | None) -> list[str]:
+    """Flags for one answer's face stats (PLAN-energy.md, 2b).
+
+    ``looking_down``: looked down 30% or more. ``low_eye_contact``: on screen under 60%. ``still``:
+    expressiveness under 0.7 x your usual, and only once there is a baseline. Null numbers raise no flag.
+    """
+    if not face:
+        return []
+    flags = []
+    down, on = face.get("looked_down_pct"), face.get("on_screen_pct")
+    if down is not None and down >= 30:
+        flags.append("looking_down")
+    if on is not None and on < 60:
+        flags.append("low_eye_contact")
+    expr, usual = face.get("expressiveness"), (baseline or {}).get("expressiveness")
+    if expr is not None and usual and expr < 0.7 * usual:
+        flags.append("still")
+    return flags
+
+
+def face_moments(face: dict | None, baseline: dict | None) -> list[dict]:
+    """Where it went wrong: the away spans, plus still stretches (``kind: "still"``).
+
+    A still stretch is 20 s or more of consecutive 5 s expression windows each under half your usual
+    expressiveness. With no baseline there are none. Sorted by start time; times are on the session clock.
+    """
+    if not face:
+        return []
+    out = [{"kind": s["kind"], "start_ms": s["start_ms"], "end_ms": s["end_ms"]}
+           for s in face.get("away_spans") or [] if s.get("kind") in ("down", "away")]
+    usual = (baseline or {}).get("expressiveness")
+    if usual:
+        run: list[dict] = []
+
+        def close():
+            if run and run[-1]["start_ms"] + _STILL_WINDOW_MS - run[0]["start_ms"] >= _STILL_MIN_MS:
+                end = run[-1]["start_ms"] + _STILL_WINDOW_MS
+                if face.get("t_end_ms") is not None:
+                    end = min(end, max(face["t_end_ms"], run[0]["start_ms"] + 1))
+                out.append({"kind": "still", "start_ms": run[0]["start_ms"], "end_ms": end})
+
+        for w in sorted(face.get("expr_windows") or [], key=lambda w: w["start_ms"]):
+            if w["value"] < 0.5 * usual:
+                if run and w["start_ms"] - run[-1]["start_ms"] != _STILL_WINDOW_MS:
+                    close()
+                    run = []
+                run.append(w)
+            else:
+                close()
+                run = []
+        close()
+    return sorted(out, key=lambda m: m["start_ms"])
+
+
+def face_moment_text(m: dict) -> str:
+    """``Looked down 0:42-0:51 (9 s)``, or ``Still face 2:10-2:38 (28 s)`` (with an en dash)."""
+    secs = max(0, round((m["end_ms"] - m["start_ms"]) / 1000))
+    return f"{FACE_MOMENT_LABEL.get(m['kind'], m['kind'])} {_mmss(m['start_ms'] / 1000)}\u2013{_mmss(m['end_ms'] / 1000)} ({secs} s)"
+
+
+def face_fields(face: dict | None, baseline: dict | None) -> dict:
+    """The face keys stored in a ``delivery`` object. ``face.moments`` is rebuilt from the spans and windows."""
+    if not face:
+        return {"face": None, "face_flags": [], "face_usual": None}
+    face = {**{k: v for k, v in face.items() if k != "moments"}, "moments": face_moments(face, baseline)}
+    return {
+        "face": face,
+        "face_flags": face_flags(face, baseline),
+        "face_usual": {"expressiveness": baseline.get("expressiveness")} if baseline and face.get("expressiveness") is not None else None,
+    }
+
+
 def _turn_seconds(t: dict) -> float:
     a, b = t.get("t_start_ms"), t.get("t_end_ms")
     if a is not None and b is not None and b > a:
@@ -287,13 +400,15 @@ def _turn_seconds(t: dict) -> float:
     return len(t["text"].split()) / 2.5
 
 
-def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None) -> None:
+def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None,
+                    face_baseline: dict | None = None) -> None:
     """Add a ``delivery`` object to each answer (in place).
 
     An answer covers the candidate turns after its ``question_turn`` and before the next
     answer's (the answer plus its follow-ups). ``audio_dir`` holds ``<turn_idx>.wav``;
     with no audio, ``pauses_over_1s`` stays None and ``voice`` is None. ``voice_baseline`` is
     ``db.voice_baseline()``: your usual voice numbers, used for the voice flags.
+    ``face_baseline`` is ``db.face_baseline()``; each answer's turns' ``face`` stats are combined into ``delivery.face``.
     """
     starts = sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int))
     for a in answers:
@@ -335,6 +450,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
             "target": list(target) if target else None,
             "flag": flag,
             **voice_fields(voice, voice_baseline),
+            **face_fields(combine_face([t.get("face") for t in mine]), face_baseline),
         }
 
 
@@ -360,4 +476,8 @@ def delivery_line(d: dict | None) -> str:
     flags = [VOICE_FLAG_LABEL[f] for f in d.get("voice_flags") or [] if f in VOICE_FLAG_LABEL]
     if flags:
         parts.append("voice: " + ", ".join(flags))
+    face = d.get("face")
+    if face and face.get("on_screen_pct") is not None:
+        parts.append(f"eye contact {round(face['on_screen_pct'])}%")
+    parts += [FACE_FLAG_LABEL[f] for f in d.get("face_flags") or [] if f in FACE_FLAG_LABEL and f != "low_eye_contact"]
     return " · ".join(parts)

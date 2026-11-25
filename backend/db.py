@@ -453,6 +453,30 @@ def voice_baseline(limit: int = 40, exclude_session: str | None = None, exclude_
     return out
 
 
+def face_baseline(limit: int = 40, exclude_session: str | None = None) -> dict | None:
+    """Your usual expressiveness: the median over your newest ``limit`` report answers that have it.
+
+    Eye contact has an absolute meaning, so only ``expressiveness`` gets a baseline. None below 10 answers.
+    """
+    items: list[tuple[int, float]] = []
+    with connect() as conn:
+        reports = conn.execute(
+            "SELECT session_id, report_json, COALESCE(created_at, 0) AS ts FROM reports "
+            "WHERE status = 'ready' AND report_json IS NOT NULL ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+    for r in reports:
+        if r["session_id"] == exclude_session:
+            continue
+        for a in (json.loads(r["report_json"]).get("answers") or []):
+            v = ((a.get("delivery") or {}).get("face") or {}).get("expressiveness")
+            if v is not None:
+                items.append((r["ts"], v))
+    items.sort(key=lambda it: it[0], reverse=True)
+    vals = [v for _, v in items[:limit]]
+    if len(vals) < VOICE_BASELINE_MIN:
+        return None
+    return {"expressiveness": round(statistics.median(vals), 2)}
+
+
 # --------------------------------------------------------------- history --- #
 
 CRITERIA = ("relevance", "structure", "specificity", "evidence")

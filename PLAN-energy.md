@@ -301,7 +301,7 @@ dependency.
 - [x] H2. 1b Run the calibration on real answers; record thresholds below (no per-answer WAVs existed yet: starting thresholds kept, rerun once data exists)
 - [x] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [x] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json` (built; camera and performance check still to verify by hand, see "H4 still to verify")
-- [ ] H5. 2b Face stats in the report and Review, with timed moments on the recording
+- [x] H5. 2b Face stats in the report and Review, with timed moments on the recording (built; needs real camera data to verify, see "H5 still to verify")
 - [ ] H6. 2c What you were saying at each moment (word timestamps, VAD segments)
 - [ ] H7. 2d Face stats in Drill
 - [ ] H8. 3 Delivery trends in History (optional)
@@ -340,3 +340,17 @@ Built and type-checked, but never run with a real camera:
    10 s and confirm a `down` span appears; a 2 s glance sideways must not. The pure functions were only
    exercised with synthetic frames (no frontend test runner exists, so `stats.ts` has no committed tests).
 4. `expr_windows` entries are `{start_ms, value}` (one number per 5 s window), not a `values` list.
+
+## H5 still to verify
+
+Built, unit-tested on synthetic numbers and type-checked, never seen with real camera data:
+
+1. Record a webcam session, finish it, and check each answer's Review row shows `eye contact N%`, with the tooltip
+   ("on screen ..., looked down ..., expressiveness ... (your usual ...)").
+2. Read from notes for about 10 s: that answer should be flagged `mostly looking down`, show a `Looked down` moment
+   with a working ▶, and a band at that point under the player. A 2 s glance away must not appear.
+3. `still` flags and `Still face` moments need `db.face_baseline` (10 answers with expressiveness); run
+   `python -m scripts.backfill_delivery` after collecting them. The 0.7x and half-of-usual thresholds are starting values.
+4. Avatar-mode note: Review decides from the current Setup record-mode preference (the mode used is not stored per
+   session), so it can be wrong for an older session.
+5. The timeline bands sit just above the turn markers, not below them.

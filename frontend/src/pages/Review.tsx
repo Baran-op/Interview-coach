@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chevron } from '../components/Dropdown'
-import { api, CATEGORY_LABEL, VOICE_FLAG_LABEL, voiceTooltip, type AnswerDelivery, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
+import { getRecordMode } from '../audio/recorder'
+import { api, CATEGORY_LABEL, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type AnswerDelivery, type FaceFlag, type FaceMoment, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn, type VoiceFlag } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
 const LABEL: Record<Criterion, string> = {
@@ -27,6 +28,7 @@ export default function Review({ sessionId, onStart }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(0)
   const [audioOnly, setAudioOnly] = useState(false)
+  const [duration, setDuration] = useState(0)
   const [isPartial, setIsPartial] = useState(false)
   const [previous, setPrevious] = useState<HistorySession | null>(null)
   const video = useRef<HTMLVideoElement>(null)
@@ -98,6 +100,7 @@ export default function Review({ sessionId, onStart }: Props) {
     const v = video.current
     if (!v) return
     setAudioOnly(v.videoWidth === 0)
+    if (Number.isFinite(v.duration)) setDuration(v.duration * 1000)
     if (v.duration === Infinity) {
       const reset = () => {
         v.removeEventListener('timeupdate', reset)
@@ -129,6 +132,9 @@ export default function Review({ sessionId, onStart }: Props) {
 
   const pack = session.pack
   const r = report?.report
+  const allMoments = (report?.report?.answers ?? []).flatMap((a) => a.delivery?.face?.moments ?? [])
+  const timelineMs = duration || (session.ended_at ? session.ended_at - session.started_at : 0)
+  const avatarNote = getRecordMode() === 'avatar'
   const turnTime = (idx: number | null) => turns.find((t) => t.idx === idx)?.t_start_ms ?? null
 
   return (
@@ -185,8 +191,23 @@ export default function Review({ sessionId, onStart }: Props) {
               controls
               preload="metadata"
               onLoadedMetadata={onMetadata}
+              onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration * 1000)}
               onTimeUpdate={(e) => setNowMs(e.currentTarget.currentTime * 1000)}
             />
+            {allMoments.length > 0 && timelineMs > 0 && (
+              <div className="moment-bands" aria-label="Moments on the recording">
+                {allMoments.map((m, i) => (
+                  <button
+                    key={i}
+                    className="moment-band"
+                    title={momentText(m)}
+                    aria-label={momentText(m)}
+                    style={{ left: `${Math.min(100, (m.start_ms / timelineMs) * 100)}%`, width: `${Math.max(0.5, Math.min(100, ((m.end_ms - m.start_ms) / timelineMs) * 100))}%` }}
+                    onClick={() => seek(m.start_ms)}
+                  />
+                ))}
+              </div>
+            )}
             {questions.length > 0 && (
               <div className="markers">
                 {questions.map((q) => (
@@ -304,6 +325,7 @@ export default function Review({ sessionId, onStart }: Props) {
               )}
             </div>
             {voiceSummary(r.answers) && <p className="small">Voice: {voiceSummary(r.answers)}</p>}
+            {faceSummary(r.answers) && <p className="small">Face: {faceSummary(r.answers)}</p>}
             {r.filler_words.examples.length > 0 && (
               <ul className="muted small">
                 {r.filler_words.examples.map((ex, i) => (
@@ -348,6 +370,14 @@ export default function Review({ sessionId, onStart }: Props) {
                     ))}
                   </div>
                   {a.delivery && <DeliveryLine d={a.delivery} />}
+                  {(a.delivery?.face?.moments?.length ?? 0) > 0 && (
+                    <MomentList
+                      moments={a.delivery!.face!.moments!}
+                      canSeek={session.has_recording}
+                      onSeek={seek}
+                      note={avatarNote && i === firstMomentAnswer(r.answers)}
+                    />
+                  )}
                   <p className="small">{a.answer_summary}</p>
                   {a.tips.length > 0 && (
                     <ul className="small">
@@ -433,6 +463,45 @@ function voiceSummary(answers: { delivery?: AnswerDelivery }[]): string {
   return bits.length ? bits.join(', ') : `no flags in ${measured.length} answers`
 }
 
+/** "eye contact 58%" etc. over the answers that have face stats, or '' if none do. */
+function faceSummary(answers: { delivery?: AnswerDelivery }[]): string {
+  const measured = answers.filter((a) => a.delivery?.face && a.delivery.face.on_screen_pct != null)
+  if (measured.length === 0) return ''
+  const count = (f: FaceFlag) => measured.filter((a) => a.delivery?.face_flags?.includes(f)).length
+  const avg = Math.round(measured.reduce((n, a) => n + a.delivery!.face!.on_screen_pct!, 0) / measured.length)
+  const bits = (['looking_down', 'low_eye_contact', 'still'] as FaceFlag[])
+    .filter((f) => count(f) > 0)
+    .map((f) => `${FACE_FLAG_LABEL[f]} in ${count(f)} of ${measured.length} answers`)
+  return `eye contact ${avg}% on average` + (bits.length ? `, ${bits.join(', ')}` : '')
+}
+
+const firstMomentAnswer = (answers: { delivery?: AnswerDelivery }[]) =>
+  answers.findIndex((a) => (a.delivery?.face?.moments?.length ?? 0) > 0)
+
+const momentText = (m: FaceMoment) =>
+  `${FACE_MOMENT_LABEL[m.kind]} ${clock(m.start_ms)}\u2013${clock(m.end_ms)} (${Math.max(0, Math.round((m.end_ms - m.start_ms) / 1000))} s)`
+
+/** Where in the recording the face stats went off, each with a button that plays it. */
+function MomentList({ moments, canSeek, onSeek, note }: { moments: FaceMoment[]; canSeek: boolean; onSeek: (ms: number) => void; note: boolean }) {
+  return (
+    <div className="moments small">
+      {note && <p className="muted small">This recording shows the avatar, not you, so the times below are for reference. Record with the webcam to watch them.</p>}
+      <ul>
+        {moments.map((m, i) => (
+          <li key={i}>
+            {momentText(m)}{' '}
+            {canSeek && (
+              <button className="small ghost" aria-label={`Play from ${clock(m.start_ms)}`} onClick={() => onSeek(m.start_ms)}>
+                ▶
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 const mmss = (s: number) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`
 
 /** Per-answer delivery stats; length outside the target is highlighted. */
@@ -452,6 +521,8 @@ function DeliveryLine({ d }: { d: AnswerDelivery }) {
   if (d.pauses_over_1s) parts.push({ text: n(d.pauses_over_1s, 'long pause'), bad: true })
   const voiceTip = voiceTooltip(d)
   const flags = d.voice_flags ?? []
+  const faceFlags = d.face_flags ?? []
+  const eye = d.face?.on_screen_pct
   return (
     <p className="small delivery-line" title={d.flag ? `This answer was too ${d.flag} for its question type` : undefined}>
       {parts.map((p, i) => (
@@ -469,6 +540,19 @@ function DeliveryLine({ d }: { d: AnswerDelivery }) {
               <span className="out-of-target">{VOICE_FLAG_LABEL[f]}</span>
             </span>
           ))}
+        </span>
+      )}
+      {(eye != null || faceFlags.length > 0) && (
+        <span title={faceTooltip(d) || undefined}>
+          {eye != null && ` · eye contact ${Math.round(eye)}%`}
+          {faceFlags
+            .filter((f) => f !== 'low_eye_contact')
+            .map((f) => (
+              <span key={f}>
+                {' · '}
+                <span className="out-of-target">{FACE_FLAG_LABEL[f]}</span>
+              </span>
+            ))}
         </span>
       )}
     </p>
