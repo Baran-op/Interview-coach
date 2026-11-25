@@ -2,6 +2,43 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, type Pack, type PackInput, type SessionListItem } from '../api'
 import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
 
+import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
+
+type Opts = PackInput['options']
+const TYPE_OPTIONS: DropdownOption<Opts['interview_type']>[] = [
+  { value: 'behavioural', label: 'Behavioural', hint: 'Past situations, STAR answers' },
+  { value: 'technical', label: 'Technical', hint: 'Skills and problem solving' },
+  { value: 'mixed', label: 'Mixed', hint: 'A bit of everything' },
+  { value: 'case', label: 'Case', hint: 'Work through a client scenario' },
+  { value: 'roleplay', label: 'Role-play', hint: 'Act out a client conversation' },
+]
+const STAGE_OPTIONS: DropdownOption<Opts['stage']>[] = [
+  { value: 'screen', label: 'Screening call', hint: 'Short, recruiter-style' },
+  { value: 'full', label: 'Full interview', hint: 'The standard round' },
+  { value: 'final', label: 'Final round', hint: 'Deeper, more senior' },
+]
+const LENGTH_OPTIONS: DropdownOption<'questions' | 'minutes'>[] = [
+  { value: 'questions', label: 'Questions' },
+  { value: 'minutes', label: 'Minutes' },
+]
+const DIFFICULTY_OPTIONS: DropdownOption<Opts['difficulty']>[] = [
+  { value: 'easy', label: 'Easy' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'hard', label: 'Hard' },
+]
+const STYLE_OPTIONS: DropdownOption<Opts['style']>[] = [
+  { value: 'friendly', label: 'Friendly', hint: 'Warm, encouraging' },
+  { value: 'neutral', label: 'Neutral', hint: 'Professional, even' },
+  { value: 'tough', label: 'Tough', hint: 'Probing follow-ups' },
+]
+const RECORD_OPTIONS: DropdownOption<RecordMode>[] = [
+  { value: 'webcam', label: 'Webcam + audio' },
+  { value: 'avatar', label: 'Avatar + audio' },
+  { value: 'both', label: 'Avatar and webcam side by side' },
+  { value: 'audio', label: 'Audio only' },
+  { value: 'off', label: "Don't record" },
+]
+
 const EMPTY: PackInput = {
   title: '',
   role: '',
@@ -148,164 +185,206 @@ export default function Setup({ onStart, editPackId }: Props) {
     void save(false)
   }
 
+  const o = form.options
+  const settingsSummary = [
+    STAGE_OPTIONS.find((s) => s.value === o.stage)?.label,
+    TYPE_OPTIONS.find((t) => t.value === o.interview_type)?.label,
+    o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`,
+    o.difficulty,
+    o.style,
+  ].join(' · ')
+
   return (
     <div className="setup">
-      <form className="card" onSubmit={submit}>
-        <h2>
-          {editingId ? 'Edit pack' : 'New interview'}
-          {editingId && (
-            <button type="button" className="ghost small" onClick={stopEditing}>
-              Cancel editing
-            </button>
-          )}
-        </h2>
-
-        <div className="row">
-          <label>
-            Role
-            <input value={form.role} onChange={(e) => set('role', e.target.value)} placeholder="Solutions Engineer" />
-          </label>
-          <label>
-            Company
-            <input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Contoso" />
-          </label>
-          <label>
-            Pack name
-            <input value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="(role @ company)" />
-          </label>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">{editingId ? 'Editing pack' : 'Mock interview'}</p>
+          <h1 className="page-title">{editingId ? form.title || 'Edit pack' : 'Prepare a new interview'}</h1>
+          <p className="muted lede">
+            Paste the job description and your CV. {o.interviewer_name || 'The interviewer'} will run a realistic interview
+            from them, and you get a scored report afterwards.
+          </p>
         </div>
-
-        <label>
-          <span className="label-row">
-            Job description
-            <input type="file" accept=".txt,.md,.pdf" onChange={(e) => loadFile(e, 'jd')} />
-          </span>
-          <textarea required rows={10} value={form.jd} onChange={(e) => set('jd', e.target.value)} placeholder="Paste the full job description" />
-        </label>
-
-        <label>
-          <span className="label-row">
-            My profile / CV
-            <input type="file" accept=".txt,.md,.pdf" onChange={(e) => loadFile(e, 'profile')} />
-          </span>
-          <textarea rows={8} value={form.profile} onChange={(e) => set('profile', e.target.value)} placeholder="Paste your CV text (reused for future packs)" />
-        </label>
-
-        <label>
-          <span className="label-row">
-            Company notes
-            <button type="button" className="ghost small" disabled={!form.company.trim() || researching} onClick={draftNotes}>
-              {researching ? 'Searching the web (up to about a minute)...' : 'Draft from the web'}
-            </button>
-          </span>
-          <textarea rows={4} value={form.company_notes} onChange={(e) => set('company_notes', e.target.value)} placeholder="Mission, products, recent news, values" />
-        </label>
-        <p className="hint">
-          "Draft from the web" uses your Claude usage (one request with web search). The draft is only filled in here: check it, edit it, and it is saved with the pack.
-        </p>
-        {sources.length > 0 && (
-          <div className="hint">
-            Sources:
-            <ul>
-              {sources.map((u) => (
-                <li key={u}>
-                  <a href={u} target="_blank" rel="noreferrer">{u}</a>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {editingId && (
+          <button type="button" className="ghost" onClick={stopEditing}>
+            Cancel editing
+          </button>
         )}
+      </div>
 
-        <div className="row">
-          <label>
-            Type
-            <select value={form.options.interview_type} onChange={(e) => setOpt('interview_type', e.target.value as PackInput['options']['interview_type'])}>
-              <option value="behavioural">Behavioural</option>
-              <option value="technical">Technical</option>
-              <option value="mixed">Mixed</option>
-              <option value="case">Case</option>
-              <option value="roleplay">Role-play</option>
-            </select>
-          </label>
-          <label>
-            Stage
-            <select value={form.options.stage} onChange={(e) => setOpt('stage', e.target.value as PackInput['options']['stage'])}>
-              <option value="screen">Screening call</option>
-              <option value="full">Full interview</option>
-              <option value="final">Final round</option>
-            </select>
-          </label>
-          <label>
-            Length
-            <span className="length">
-              <select
-                value={form.options.minutes ? 'minutes' : 'questions'}
-                onChange={(e) => setOpt('minutes', e.target.value === 'minutes' ? 20 : null)}
-              >
-                <option value="questions">Questions</option>
-                <option value="minutes">Minutes</option>
-              </select>
-              {form.options.minutes ? (
-                <input type="number" min={5} max={120} step={5} value={form.options.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
-              ) : (
-                <input type="number" min={1} max={20} value={form.options.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
-              )}
+      <form className="setup-form" onSubmit={submit}>
+        <section className="card section">
+          <h2 className="section-title">
+            <span className="step">1</span> The role
+          </h2>
+          <div className="row">
+            <label>
+              Role
+              <input value={form.role} onChange={(e) => set('role', e.target.value)} placeholder="Solutions Engineer" />
+            </label>
+            <label>
+              Company
+              <input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Contoso" />
+            </label>
+            <label>
+              Pack name
+              <input value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Role @ Company" />
+            </label>
+          </div>
+        </section>
+
+        <section className="card section">
+          <div className="section-head">
+            <h2 className="section-title">
+              <span className="step">2</span> Job description
+            </h2>
+            <FileButton onFile={(e) => loadFile(e, 'jd')} />
+          </div>
+          <textarea
+            aria-label="Job description"
+            required
+            rows={10}
+            value={form.jd}
+            onChange={(e) => set('jd', e.target.value)}
+            placeholder="Paste the full job description"
+          />
+          <div className="field-foot muted small">{wordCount(form.jd)}</div>
+        </section>
+
+        <section className="card section">
+          <div className="section-head">
+            <h2 className="section-title">
+              <span className="step">3</span> Your CV
+            </h2>
+            <FileButton onFile={(e) => loadFile(e, 'profile')} />
+          </div>
+          <textarea
+            aria-label="My profile / CV"
+            rows={8}
+            value={form.profile}
+            onChange={(e) => set('profile', e.target.value)}
+            placeholder="Paste your CV text (reused for future packs)"
+          />
+          <div className="field-foot muted small">{wordCount(form.profile)} · saved and reused for your next pack</div>
+        </section>
+
+        <details className="card section disclosure" open={!!form.company_notes || undefined}>
+          <summary>
+            <span className="section-title">
+              <span className="step">4</span> Company notes <span className="muted small optional">optional</span>
             </span>
-          </label>
-          <label>
-            Difficulty
-            <select value={form.options.difficulty} onChange={(e) => setOpt('difficulty', e.target.value as PackInput['options']['difficulty'])}>
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-          <label>
-            Style
-            <select value={form.options.style} onChange={(e) => setOpt('style', e.target.value as PackInput['options']['style'])}>
-              <option value="friendly">Friendly</option>
-              <option value="neutral">Neutral</option>
-              <option value="tough">Tough</option>
-            </select>
-          </label>
-          <label>
-            Interviewer
-            <input value={form.options.interviewer_name} onChange={(e) => setOpt('interviewer_name', e.target.value)} />
-          </label>
-          <label>
-            Voice
-            <select value={form.options.voice} onChange={(e) => setOpt('voice', e.target.value)}>
-              {voices.map((v) => (
-                <option key={v} value={v}>
-                  {voiceLabel(v)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+            <span className="summary-meta muted small">{form.company_notes ? wordCount(form.company_notes) : 'Mission, products, news'}</span>
+            <Chevron />
+          </summary>
+          <div className="notes-body">
+            <div className="research-row">
+              <button type="button" className="small" disabled={!form.company.trim() || researching} onClick={draftNotes}>
+                {researching ? 'Searching the web (up to about a minute)…' : 'Draft from the web'}
+              </button>
+              <span className="muted small">
+                {form.company.trim()
+                  ? 'One Claude request with web search. The draft only fills this box: check and edit it before saving.'
+                  : 'Enter the company name above to draft notes from the web.'}
+              </span>
+            </div>
+            <textarea
+              aria-label="Company notes"
+              rows={5}
+              value={form.company_notes}
+              onChange={(e) => set('company_notes', e.target.value)}
+              placeholder="Mission, products, recent news, values"
+            />
+            {sources.length > 0 && (
+              <div className="sources small">
+                <span className="muted">Sources</span>
+                <ul>
+                  {sources.map((u) => (
+                    <li key={u}>
+                      <a href={u} target="_blank" rel="noreferrer">
+                        {u}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
 
-        <label className="inline">
-          Record the session
-          <select
-            value={recordMode}
-            onChange={(e) => {
-              const m = e.target.value as RecordMode
-              setMode(m)
-              setRecordMode(m)
-            }}
-          >
-            <option value="webcam">Webcam + audio</option>
-            <option value="avatar">Avatar + audio</option>
-            <option value="both">Avatar and webcam side by side</option>
-            <option value="audio">Audio only</option>
-            <option value="off">Don't record</option>
-          </select>
-        </label>
+        <details className="card section disclosure" open>
+          <summary>
+            <span className="section-title">
+              <span className="step">5</span> Interview settings
+            </span>
+            <span className="summary-meta muted small">{settingsSummary}</span>
+            <Chevron />
+          </summary>
+          <div className="settings-grid">
+            <div className="field">
+              <span className="field-label">Type</span>
+              <Dropdown ariaLabel="Interview type" value={o.interview_type} options={TYPE_OPTIONS} onChange={(v) => setOpt('interview_type', v)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Stage</span>
+              <Dropdown ariaLabel="Interview stage" value={o.stage} options={STAGE_OPTIONS} onChange={(v) => setOpt('stage', v)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Length</span>
+              <span className="length">
+                <Dropdown
+                  ariaLabel="Length in"
+                  value={o.minutes ? 'minutes' : 'questions'}
+                  options={LENGTH_OPTIONS}
+                  onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
+                />
+                {o.minutes ? (
+                  <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
+                ) : (
+                  <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+                )}
+              </span>
+            </div>
+            <div className="field">
+              <span className="field-label">Difficulty</span>
+              <Dropdown ariaLabel="Difficulty" value={o.difficulty} options={DIFFICULTY_OPTIONS} onChange={(v) => setOpt('difficulty', v)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Style</span>
+              <Dropdown ariaLabel="Interviewer style" value={o.style} options={STYLE_OPTIONS} onChange={(v) => setOpt('style', v)} />
+            </div>
+            <label>
+              Interviewer
+              <input value={o.interviewer_name} onChange={(e) => setOpt('interviewer_name', e.target.value)} />
+            </label>
+            <div className="field">
+              <span className="field-label">Voice</span>
+              <Dropdown
+                ariaLabel="Voice"
+                value={o.voice}
+                options={voices.map((v) => ({ value: v, label: voiceLabel(v) }))}
+                onChange={(v) => setOpt('voice', v)}
+              />
+            </div>
+            <div className="field wide">
+              <span className="field-label">Recording</span>
+              <Dropdown
+                ariaLabel="Record the session"
+                value={recordMode}
+                options={RECORD_OPTIONS}
+                onChange={(m) => {
+                  setMode(m)
+                  setRecordMode(m)
+                }}
+              />
+            </div>
+          </div>
+        </details>
 
         {error && <div className="banner error">{error}</div>}
         <div className="form-actions">
-          <button type="submit" className="primary" disabled={saving}>
-            {saving ? 'Saving…' : editingId ? 'Save changes & start interview' : 'Save pack & start interview'}
+          <button type="submit" className="primary large" disabled={saving}>
+            {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Start interview'}
+            {!saving && <span aria-hidden> →</span>}
           </button>
           {editingId && (
             <button type="button" disabled={saving} onClick={() => void save(true)}>
@@ -315,44 +394,80 @@ export default function Setup({ onStart, editPackId }: Props) {
         </div>
       </form>
 
-      <aside className="card packs">
-        <h2>Saved packs</h2>
-        {packs.length === 0 && <p className="muted">None yet.</p>}
-        {packs.map((p) => (
-          <div key={p.id} className="pack">
-            <div>
-              <strong>{p.title}</strong>
-              <div className="muted small">{packSummary(p)}</div>
-            </div>
-            <div className="pack-actions">
-              <button type="button" onClick={() => onStart(p)}>Start</button>
-              <a className="button-link" href={`#/drill/${p.id}`}>Drill</a>
-              <a className="button-link" href={`#/prep/${p.id}`}>Prep</a>
-              <button type="button" className="ghost" onClick={() => editPack(p)}>
-                Edit
-              </button>
-            </div>
-          </div>
-        ))}
-        {sessions.length > 0 && (
-          <>
-            <h2 className="spaced">
-              Recent sessions <a className="small" href="#/history">All history →</a>
-            </h2>
-            {sessions.map((s) => (
-              <a key={s.id} className="session-link" href={`#/review/${s.id}`}>
-                <span>
-                  <strong>{s.pack_title}</strong>
-                  <span className="muted small"> · {new Date(s.started_at).toLocaleString()}</span>
-                </span>
-                <span className="score-chip">
-                  {s.overall_score != null ? s.overall_score.toFixed(1) : s.report_status === 'pending' ? '…' : '–'}
-                </span>
-              </a>
+      <aside className="sidebar">
+        <section className="card">
+          <h2 className="side-title">
+            Saved packs <span className="count">{packs.length}</span>
+          </h2>
+          {packs.length === 0 && <p className="muted small empty">Packs you save appear here so you can rerun them.</p>}
+          <div className="pack-list">
+            {packs.map((p) => (
+              <div key={p.id} className={`pack ${editingId === p.id ? 'current' : ''}`}>
+                <div className="pack-info">
+                  <strong>{p.title}</strong>
+                  <div className="muted small">{packSummary(p)}</div>
+                </div>
+                <div className="pack-actions">
+                  <a className="button-link small" href={`#/prep/${p.id}`}>
+                    Prep
+                  </a>
+                  <a className="button-link small" href={`#/drill/${p.id}`}>
+                    Drill
+                  </a>
+                  <button type="button" className="small ghost" onClick={() => editPack(p)}>
+                    Edit
+                  </button>
+                  <button type="button" className="primary small" onClick={() => onStart(p)}>
+                    Start
+                  </button>
+                </div>
+              </div>
             ))}
-          </>
+          </div>
+        </section>
+        {sessions.length > 0 && (
+          <section className="card">
+            <h2 className="side-title">
+              Recent sessions
+              <a className="small subtle-link" href="#/history">
+                All history →
+              </a>
+            </h2>
+            <div className="session-list">
+              {sessions.map((s) => (
+                <a key={s.id} className="session-link" href={`#/review/${s.id}`}>
+                  <span className="session-info">
+                    <strong>{s.pack_title}</strong>
+                    <span className="muted small">
+                      {new Date(s.started_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </span>
+                  <span className="score-chip">
+                    {s.overall_score != null ? s.overall_score.toFixed(1) : s.report_status === 'pending' ? '…' : '–'}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
         )}
       </aside>
     </div>
+  )
+}
+
+function wordCount(text: string) {
+  const n = text.trim() ? text.trim().split(/\s+/).length : 0
+  return `${n.toLocaleString()} word${n === 1 ? '' : 's'}`
+}
+
+function FileButton({ onFile }: { onFile: (e: ChangeEvent<HTMLInputElement>) => void }) {
+  return (
+    <label className="file-button">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+        <path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Upload PDF / TXT
+      <input type="file" accept=".txt,.md,.pdf" onChange={onFile} />
+    </label>
   )
 }

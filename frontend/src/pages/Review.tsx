@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Chevron } from '../components/Dropdown'
 import { api, CATEGORY_LABEL, type AnswerDelivery, type Criterion, type HistorySession, type Pack, type ReportResponse, type SessionInfo, type Turn } from '../api'
 
 const CRITERIA: Criterion[] = ['relevance', 'structure', 'specificity', 'evidence']
@@ -134,6 +135,7 @@ export default function Review({ sessionId, onStart }: Props) {
     <div className="review">
       <div className="review-head card">
         <h2>
+          <span className="eyebrow">Session review</span>
           {pack?.title ?? 'Interview'}
           <div className="muted small">
             {new Date(session.started_at).toLocaleString()}
@@ -204,7 +206,12 @@ export default function Review({ sessionId, onStart }: Props) {
           <p className="muted">No recording for this session.</p>
         )}
 
-        <h3>Transcript</h3>
+        <details className="disclosure plain" open>
+          <summary>
+            <h3>Transcript</h3>
+            <span className="summary-meta muted small">{turns.length} turns</span>
+            <Chevron />
+          </summary>
         <div className="turns">
           {turns.map((t) => (
             <button
@@ -222,10 +229,11 @@ export default function Review({ sessionId, onStart }: Props) {
             </button>
           ))}
         </div>
+        </details>
       </section>
 
       <section className="card report">
-        <h2>Feedback</h2>
+        <h2 className="section-title">Feedback</h2>
         {error && <div className="banner error">{error}</div>}
         {(!report || report.status === 'pending') && (
           <p className="muted">Writing your feedback… This usually takes under a minute.</p>
@@ -306,21 +314,32 @@ export default function Review({ sessionId, onStart }: Props) {
             <h3>Your answers</h3>
             {r.answers.map((a, i) => {
               const at = turnTime(a.question_turn)
+              const avg = CRITERIA.reduce((n, c) => n + a.scores[c], 0) / CRITERIA.length
               return (
-                <div key={i} className="answer">
-                  <div className="answer-q">
-                    <strong>
-                      {i + 1}. {a.question}
-                    </strong>
-                    <span className="chip" title={a.competency || undefined}>
-                      {CATEGORY_LABEL[a.category] ?? a.category}
-                      {a.competency ? ` · ${a.competency}` : ''}
+                <details key={i} className="answer disclosure" open={i === 0 || undefined}>
+                  <summary>
+                    <span className="answer-n">{i + 1}</span>
+                    <strong className="answer-title">{a.question}</strong>
+                    <span className="score-chip" title="Average of the four criteria">
+                      {avg.toFixed(1)}
                     </span>
+                    <Chevron />
+                  </summary>
+                  <div className="answer-tools">
+                    {a.category && (
+                      <span className="chip" title={a.competency || undefined}>
+                        {CATEGORY_LABEL[a.category] ?? a.category}
+                        {a.competency ? ` · ${a.competency}` : ''}
+                      </span>
+                    )}
                     {session.has_recording && at != null && (
-                      <button className="ghost small" onClick={() => seek(at)}>
-                        ▶ {clock(at)}
+                      <button className="small" onClick={() => seek(at)}>
+                        ▶ Play from {clock(at)}
                       </button>
                     )}
+                    <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
+                      Practise this question
+                    </a>
                   </div>
                   <div className="bars">
                     {CRITERIA.map((c) => (
@@ -336,16 +355,13 @@ export default function Review({ sessionId, onStart }: Props) {
                       ))}
                     </ul>
                   )}
-                  <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
-                    Practise this question
-                  </a>
                   {a.better_answer && (
                     <details className="better">
                       <summary>A stronger answer</summary>
                       <p>{a.better_answer}</p>
                     </details>
                   )}
-                </div>
+                </details>
               )
             })}
           </>

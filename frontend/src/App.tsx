@@ -57,9 +57,14 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <a className="brand" href="#/">
-          Interview Coach
+          <span className="brand-mark" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 16 16">
+              <path d="M3 3.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 13 11.5H8l-3.2 2.4a.5.5 0 0 1-.8-.4v-2H3A1.5 1.5 0 0 1 1.5 10V5A1.5 1.5 0 0 1 3 3.5Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span className="brand-name">Interview Coach</span>
         </a>
-        {screen.name === 'interview' && <span className="muted">{screen.pack.title}</span>}
+        {screen.name === 'interview' && <span className="topbar-context">{screen.pack.title}</span>}
         {screen.name !== 'interview' && (
           <nav className="nav">
             <a href="#/" className={screen.name === 'setup' ? 'active' : ''}>

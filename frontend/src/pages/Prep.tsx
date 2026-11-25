@@ -66,7 +66,10 @@ export default function Prep({ packId }: { packId: string }) {
     <div className="card prep">
       <div className="review-head">
         <div>
-          <h2>Prep sheet{pack ? `: ${pack.title}` : ''}</h2>
+          <h2>
+            <span className="eyebrow">Prep sheet</span>
+            {pack ? pack.title : 'Prep sheet'}
+          </h2>
           {data?.created_at && <div className="muted small">Written {new Date(data.created_at).toLocaleString()}</div>}
         </div>
         <div className="actions">

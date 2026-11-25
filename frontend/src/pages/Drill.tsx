@@ -208,9 +208,12 @@ export default function Drill({ packId, initialQuestion }: Props) {
 
   return (
     <div className="drill">
-      <div className="drill-head">
-        <h1>Drill{pack ? `: ${pack.title}` : ''}</h1>
-        <p className="muted small">Practise one question at a time. Each attempt you submit uses one Claude request.</p>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Drill</p>
+          <h1 className="page-title">{pack ? pack.title : 'Drill'}</h1>
+          <p className="muted lede">Practise one question at a time. Each attempt you submit uses one Claude request.</p>
+        </div>
       </div>
       {error && <div className="banner error">{error}</div>}
       <div className="drill-body">

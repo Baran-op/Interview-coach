@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, CATEGORY_LABEL, type Criterion, type HistorySession, type Pack, type PackHistory } from '../api'
+import { Chevron } from '../components/Dropdown'
 import { packSummary } from './Setup'
 
 const CRITERIA: { key: Criterion; label: string }[] = [
@@ -115,7 +116,13 @@ export default function History({ onStart }: Props) {
 
   return (
     <div className="history">
-      <h1 className="page-title">History</h1>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Progress</p>
+          <h1 className="page-title">History</h1>
+          <p className="muted lede">Every pack you've practised, with scores over time.</p>
+        </div>
+      </div>
       {error && <div className="banner error">{error}</div>}
       {data.length === 0 && (
         <div className="card">
@@ -173,6 +180,12 @@ export default function History({ onStart }: Props) {
                 </div>
                 {scored.length > 1 && <ScoreChart sessions={sessions.filter((s) => s.overall_score != null)} />}
                 <TypeTable sessions={scored} />
+                <details className="disclosure plain" open>
+                  <summary>
+                    <h3>Sessions</h3>
+                    <span className="summary-meta muted small">{sessions.length} total</span>
+                    <Chevron />
+                  </summary>
                 <div className="table-wrap">
                   <table className="sessions">
                     <caption className="sr-only">Sessions for {pack.title}</caption>
@@ -230,6 +243,7 @@ export default function History({ onStart }: Props) {
                     </tbody>
                   </table>
                 </div>
+                </details>
               </>
             )}
           </section>

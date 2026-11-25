@@ -5,6 +5,7 @@ import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
 import { SessionRecorder, getRecordMode } from '../audio/recorder'
 import { TurnListener } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
+import Dropdown from '../components/Dropdown'
 
 type Phase =
   | 'starting' // opening the session
@@ -61,7 +62,10 @@ function formatTime(ms: number) {
 
 function isTyping(target: EventTarget | null) {
   const el = target as HTMLElement | null
-  return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.isContentEditable)
+  return (
+    !!el &&
+    (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest?.('.dropdown'))
+  )
 }
 
 export default function Interview({ pack, onExit, onReview }: Props) {
@@ -623,13 +627,13 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   return (
     <div className="interview card">
       <div className="interview-bar">
-        <span>
-          {pack.role || pack.title}
-          {pack.company ? ` · ${pack.company}` : ''}
+        <span className="interview-title">
+          <strong>{pack.role || pack.title}</strong>
+          {pack.company && <span className="muted"> · {pack.company}</span>}
         </span>
         {recording && live && (
           <span className="rec" title={recording === 'webcam' ? 'Recording webcam and audio' : 'Recording audio'}>
-            ● REC
+            <span className="rec-dot" /> REC
           </span>
         )}
         <span className={`timer ${pack.options.minutes && elapsed > pack.options.minutes * 60000 ? 'over' : ''}`}>
@@ -651,7 +655,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
       </div>
       {saving && <div className="banner">{saving}</div>}
       {confirmEnd && live && (
-        <div className="banner" role="alertdialog" aria-label="End the interview early">
+        <div className="banner confirm" role="alertdialog" aria-label="End the interview early">
           End before {interviewer} has wrapped up? Scoring it costs one Claude request.{' '}
           <button onClick={() => { setConfirmEnd(false); void finishInterview() }}>Score it</button>{' '}
           <button className="danger" onClick={() => void discardInterview()}>Discard it</button>{' '}
@@ -711,13 +715,14 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           {voiceMode && (
             <div className="muted small hint">
               Your turn ends{silenceMs ? ' after ' : ' '}
-              <select value={silenceMs} onChange={(e) => changeSilence(Number(e.target.value))}>
-                {SILENCE_OPTIONS.map((ms) => (
-                  <option key={ms} value={ms}>
-                    {ms ? `${ms / 1000} s` : 'only when I press Done'}
-                  </option>
-                ))}
-              </select>{' '}
+              <Dropdown
+                size="sm"
+                placement="up"
+                ariaLabel="When your turn ends"
+                value={silenceMs}
+                options={SILENCE_OPTIONS.map((ms) => ({ value: ms, label: ms ? `${ms / 1000} s` : 'only when I press Done' }))}
+                onChange={changeSilence}
+              />{' '}
               {silenceMs ? 'of silence, or press Done. Hold Space to keep talking through pauses.' : '(pauses never end it).'}
             </div>
           )}

@@ -34,8 +34,9 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
   `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `prep.py` prep sheet per pack (`source_hash`, `clean_sheet`, one-Claude-call `write` with `prompts/prep.txt`; stored in the `prep` table, feeds drill's `prep` source), `drill.py` drill mode (question list, one-Claude-call scoring with `prompts/drill.txt`, `question_key`), `delivery.py` per-answer delivery stats (`text_stats`, `audio_stats` from the saved answer WAVs, `answer_delivery` adds `delivery` to each report answer, `TARGET_SECONDS`), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
   `prompts/` (`interviewer.txt`, `feedback.txt`, `drill.txt`, `prep.txt`).
 - `backend/research.py` + `prompts/research.txt`: "Draft from the web" company notes (`POST /research`); the only call with web tools (WebSearch/WebFetch), the interviewer stays tool-less.
-- `frontend/` Vite + React + TypeScript. `src/pages` (incl. `Drill.tsx`, route `#/drill/<pack id>?q=<question>`), `src/audio` (Silero VAD, recording), `src/avatar`
-  (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
+- `frontend/` Vite + React + TypeScript. `src/pages` (incl. `Drill.tsx`, route `#/drill/<pack id>?q=<question>`), `src/components` (`Dropdown.tsx`:
+  shared listbox + `Chevron`), `src/audio` (Silero VAD, recording), `src/avatar`
+  (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`, `src/index.css` (the whole design system).
 - `scripts/` hand-run tools. `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.
 - `SPEC.md` the original spec and milestones; `PLAN.md` the coaching-improvements plan with its build-order checklist.
@@ -57,6 +58,11 @@ pip install -r backend/requirements-dev.txt && pytest backend/tests  # backend u
 - `prompts/interviewer.txt` scripts the whole interview (its `{stage}` block comes from `STAGES` in `brain.py`: screen/full/final, old packs default to full): intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list), and keep the criteria and anchors in `prompts/drill.txt` identical to `feedback.txt` (a test checks this).
 - Session history: `db.pack_report_history` feeds `brain.history_block` (`{history}` in `interviewer.txt`); `feedback._system_prompt` gets the previous session's fixes (`{previous_fixes}`) and the report carries `previous_fixes` statuses. Keep the two prompt files in step.
 - Keep all avatar interaction going through `AvatarController.say()`.
+- UI is monochrome: colours are CSS tokens on `:root` in `index.css` (light + dark via `prefers-color-scheme`);
+  red (`--danger`) is reserved for recording and errors, and the per-type History chart keeps its categorical colours.
+  Use `<Dropdown>` instead of native `<select>`, inside a `<div className="field">` (not a `<label>`: a label
+  re-forwards option clicks to the button). Collapsible sections are `<details className="disclosure">` with a
+  `<Chevron />` in the summary.
 - Optional env: `WHISPER_MODEL`, `KOKORO_MODEL`, `KOKORO_VOICE`, `INTERVIEWER_MODEL`, `FEEDBACK_MODEL`, `RESEARCH_MODEL`, `IDLE_TIMEOUT_MIN` (default 30).
 - Sessions end three ways, all via `finish_session()` in `main.py`: End button, `pagehide` beacon, idle reaper. Ending early asks Score / Discard / Keep going; Discard sends `/end` with `score:false` then `DELETE /sessions/{id}`; the beacon and reaper always score.
   The Interview page keeps the recording blob in memory and `saveSession()` is retryable (Retry / Download buttons).
