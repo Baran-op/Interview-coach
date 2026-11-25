@@ -89,6 +89,10 @@ export default function Interview({ pack, onExit, onReview }: Props) {
   const [silenceMs, setSilenceMs] = useState(readSilence)
   const [draft, setDraft] = useState('')
   const [elapsed, setElapsed] = useState(0)
+  const elapsedRef = useRef(0)
+  elapsedRef.current = elapsed
+  // A stations brief: the station the interviewer opened last, and the interview time when it did.
+  const [station, setStation] = useState<(Extract<InterviewEvent, { type: 'station' }> & { since: number }) | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
   const [confirmEnd, setConfirmEnd] = useState(false) // asking: score, discard or keep going
@@ -326,6 +330,8 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           isFinal = ev.is_final
           replyTurn = ev.turn_idx
           if (replyMsg !== null) patchMessage(replyMsg, () => ({ text: ev.reply_text, expressions: ev.expressions }))
+        } else if (ev.type === 'station') {
+          setStation((cur) => (cur?.index === ev.index ? cur : { ...ev, since: elapsedRef.current }))
         } else if (ev.type === 'error') {
           throw new Error(ev.message)
         }
@@ -758,6 +764,13 @@ export default function Interview({ pack, onExit, onReview }: Props) {
         </section>
 
         <section className="transcript">
+          {station && (
+            <StationCard
+              station={station}
+              leftMs={station.minutes * 60000 - (elapsed - station.since)}
+              collapsed={phase === 'listening'}
+            />
+          )}
           <div className="chat">
             {messages.map((m) => (
               <div key={m.id} className={`msg ${m.speaker} ${m.pending ? 'pending' : ''}`}>
@@ -793,6 +806,29 @@ export default function Interview({ pack, onExit, onReview }: Props) {
           </div>
         </section>
       </div>
+    </div>
+  )
+}
+
+/** The current station (stations briefs): name, time left and the scenario; one line while you answer. */
+function StationCard({ station, leftMs, collapsed }: {
+  station: { number: number; of: number; name: string; scenario: string | null }
+  leftMs: number
+  collapsed: boolean
+}) {
+  const over = leftMs < 0
+  const s = Math.floor(Math.abs(leftMs) / 1000)
+  const left = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  return (
+    <div className={`station-card ${collapsed ? 'collapsed' : ''}`} role="status">
+      <div className="station-head">
+        <span className="muted small">
+          Station {station.number} of {station.of}
+        </span>
+        <strong>{station.name}</strong>
+        <span className={`station-left ${over ? 'over' : ''}`}>{over ? `${left} over` : `${left} left`}</span>
+      </div>
+      {!collapsed && station.scenario && <p className="station-scenario">{station.scenario}</p>}
     </div>
   )
 }

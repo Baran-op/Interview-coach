@@ -196,7 +196,8 @@ How the format runs:
   time, then says time is up and moves on. Each of your answers carries a hidden note such as
   "(Time: station 2 of 3, 7 of 8 min used; 18 of 30 min overall.)"; if the interviewer forgets a tag the
   station comes from the clock. The report has one entry per station reached. Setup hides type, stage and
-  length (the brief sets them) and the timer counts to the stations' total.
+  length (the brief sets them) and the timer counts to the stations' total. A card above the transcript
+  shows the current station, its time left and its scenario (one line while you answer).
 - **Panel**: the conversation, with the members introduced at the start and each leading the questions
   in their focus area, all in the one voice.
 

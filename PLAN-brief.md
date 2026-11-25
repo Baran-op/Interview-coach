@@ -557,4 +557,4 @@ No new dependencies. No new local models.
       STAR stories only when a category's hint uses STAR.
 - [ ] I7. Docs (README, SPEC, CLAUDE.md) and the end-to-end check with two fictional packs (after you
       approve the requests).
-- [ ] I8 (optional). Station card on the Interview page.
+- [x] I8 (optional). Station card on the Interview page.

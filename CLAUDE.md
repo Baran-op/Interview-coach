@@ -66,7 +66,7 @@ python -m backend.tests.golden.make                                 # regenerate
   Stations: the interviewer tags the turn opening station N with `[station N]` (stripped by `parse_tags`, like the
   expression tags); `LiveSession` keeps the plan and current station (`brain.current_station`: the tag wins unless
   it overran by 2+ min, else `station_at` from the clock), `turns.station` stores the key, time notes become
-  per-station, and the stream emits a `station` event.
+  per-station, and the stream emits a `station` event (the Interview page's `StationCard` shows it).
 - The default conversation script (its `{stage}` block comes from `STAGES` in `brain.py`: screen/full/final, old packs default to full): intro, "tell me about yourself", motivation, main questions by type, candidate questions, close with `[END]`. `prompts/feedback.txt` scores the first two as answers too; keep the two files in step (including the category list). The criteria and anchors in `prompts/feedback.txt` and `prompts/drill.txt` both come from `brief.render_criteria` (a test checks this).
 - Session history: `db.pack_report_history` feeds `brain.history_block` (`{history}` in `interviewer.txt`); `feedback._system_prompt` gets the previous session's fixes (`{previous_fixes}`) and the report carries `previous_fixes` statuses. Keep the two prompt files in step.
 - Face tracking (Phase H): numbers only, never send or store video frames, never label emotions in UI text. Off when the model is missing, the Setup toggle (`localStorage.faceTracking`) is off, or there is no camera in the recording. Drill opens its own camera (self-view) only when the toggle is on and the model exists, and stops it on leaving the page.

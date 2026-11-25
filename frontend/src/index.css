@@ -509,3 +509,11 @@ details.story[open] { border-color: var(--border-strong); padding-bottom: 12px; 
   .brief-item.row { flex-direction: column; align-items: stretch; }
 }
 .drill-history tr.earlier td { color: var(--muted); opacity: 0.7; }
+
+/* Station card (Interview, stations briefs) */
+.station-card { margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--text); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-sm); }
+.station-card.collapsed { padding: 8px 14px; }
+.station-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.station-left { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 500; }
+.station-left.over { font-weight: 700; text-decoration: underline dotted; text-underline-offset: 3px; }
+.station-scenario { margin: 8px 0 0; white-space: pre-wrap; line-height: 1.55; }
