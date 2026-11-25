@@ -10,8 +10,12 @@ import hashlib
 import os
 from pathlib import Path
 
+import json
+import re
+
+from . import brief as brief_mod
 from . import claude_json, materials
-from .categories import resolve_category
+from .categories import CATEGORIES, resolve_category
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -20,9 +24,12 @@ class PrepError(RuntimeError):
     pass
 
 
-def source_hash(pack: dict) -> str:
-    """SHA-1 of the JD, CV and company notes (the materials' slot view, so a legacy pack hashes
-    as before): changes when the sheet's sources change."""
+def source_hash(pack: dict, brief: dict | None = None) -> str:
+    """What the sheet was written from: with a brief, the SHA-1 of the brief JSON (editing the brief
+    marks the sheet stale); without, the SHA-1 of the JD, CV and company notes (the materials' slot
+    view, so existing sheets of legacy packs are not marked stale)."""
+    if brief is not None:
+        return hashlib.sha1(json.dumps(brief, sort_keys=True).encode("utf-8")).hexdigest()
     h = hashlib.sha1()
     slots = materials.legacy_slots(pack)
     for field in ("jd", "profile", "company_notes"):
@@ -57,13 +64,13 @@ def _strings(v) -> list[str]:
     return [_s(x) for x in v if _s(x)] if isinstance(v, list) else []
 
 
-def clean_sheet(raw: dict) -> dict:
-    """Coerce Claude's JSON into the stored shape (drops empty entries, fixes categories)."""
+def clean_sheet(raw: dict, allowed=CATEGORIES) -> dict:
+    """Coerce Claude's JSON into the stored shape (drops empty entries, resolves categories against `allowed`)."""
     questions = []
     for q in raw.get("likely_questions") or []:
         text = _s(q.get("question")) if isinstance(q, dict) else ""
         if text:
-            questions.append({"question": text, "category": resolve_category(q.get("category"), text),
+            questions.append({"question": text, "category": resolve_category(q.get("category"), text, allowed),
                               "why": _s(q.get("why"))})
     gaps = []
     for g in raw.get("gaps") or []:
@@ -86,14 +93,56 @@ def drill_questions(sheet: dict | None) -> list[dict]:
             for q in (sheet or {}).get("likely_questions") or [] if q.get("question")]
 
 
-def system_prompt(pack: dict) -> str:
-    slots = materials.legacy_slots(pack)
+def wants_stories(brief: dict | None) -> bool:
+    """STAR stories only when some category's expected answer shape uses STAR (always for the default brief)."""
+    return brief is None or any(re.search(r"\bSTAR\b", c.get("structure_hint") or "") for c in brief["categories"])
+
+
+def wants_questions_to_ask(brief: dict | None) -> bool:
+    return brief is None or brief["format"]["candidate_questions"]
+
+
+def _brief_sections(brief: dict) -> str:
+    f = brief["format"]
+    likely = "\n".join(f"  - {q['question']} ({q['category']})" for q in brief["likely_questions"]) or "  (none listed)"
+    stories = ("6 to 8 STAR stories built ONLY from the candidate facts. Never invent achievements, employers, tools or "
+               "numbers: where a detail is missing, write a placeholder in square brackets, such as [team size] or "
+               "[% improvement]. \"competencies\" are 1 to 3 of the brief's competencies. \"numbers\" lists the figures "
+               "from the candidate facts used in the story (empty list if none). Each of situation, task, action and "
+               "result is one or two sentences, with \"I\" rather than \"we\"."
+               if wants_stories(brief) else "an empty list: this interview's answers are not STAR-shaped.")
+    asks = ("4 to 6 sharp questions for the candidate to ask the interviewer, specific to this role and organisation, using "
+            "the facts about the organisation where they help. No questions about salary or holidays."
+            if wants_questions_to_ask(brief) else "an empty list: this interview has no time for the candidate's questions.")
+    opening = (' Include "Tell me about yourself" and a question on why this role and organisation.'
+               if f["opening"] else ' Do not include "Tell me about yourself"; this interview does not open with it.')
+    values = {
+        "likely": likely,
+        "probes": (": " + "; ".join(brief["probes"])) if brief["probes"] else "",
+        "opening": opening,
+        "categories": ", ".join(brief_mod.category_keys(brief)),
+        "competencies": "; ".join(brief["competencies"]) or "(none listed: use the main things the interview assesses)",
+        "stories": stories,
+        "questions_to_ask": asks,
+    }
+    text = (PROMPTS_DIR / "prep_sections_brief.txt").read_text(encoding="utf-8")
+    for k, v in values.items():
+        text = text.replace("{" + k + "}", str(v))
+    return text
+
+
+def system_prompt(pack: dict, brief: dict | None = None) -> str:
+    """The prep prompt. `brief` is the pack's current brief; None renders today's prompt exactly."""
+    if brief is None:
+        context = brief_mod.legacy_context(materials.legacy_slots(pack))
+        sections = (PROMPTS_DIR / "prep_sections.txt").read_text(encoding="utf-8")
+    else:
+        context, sections = brief_mod.scoring_context(brief), _brief_sections(brief)
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
-        "jd": slots["jd"] or "(not provided)",
-        "profile": slots["profile"] or "(not provided)",
-        "company_notes": slots["company_notes"] or "(not provided)",
+        "context": context,
+        "sections": sections,
     }
     text = (PROMPTS_DIR / "prep.txt").read_text(encoding="utf-8")
     for k, v in values.items():
@@ -101,13 +150,17 @@ def system_prompt(pack: dict) -> str:
     return text
 
 
-async def write(pack: dict) -> dict:
+async def write(pack: dict, brief: dict | None = None) -> dict:
     model = os.environ.get("FEEDBACK_MODEL") or os.environ.get("INTERVIEWER_MODEL") or None
     try:
-        raw = await claude_json.ask_json(system_prompt(pack), "Write the prep sheet JSON now.", SCHEMA, model)
+        raw = await claude_json.ask_json(system_prompt(pack, brief), "Write the prep sheet JSON now.", SCHEMA, model)
     except claude_json.ClaudeJSONError as exc:
         raise PrepError(str(exc)) from exc
-    sheet = clean_sheet(raw)
+    sheet = clean_sheet(raw, brief_mod.category_keys(brief))
+    if not wants_stories(brief):
+        sheet["stories"] = []
+    if not wants_questions_to_ask(brief):
+        sheet["questions_to_ask"] = []
     if not sheet["likely_questions"]:
         raise PrepError("Claude returned an empty prep sheet; try again")
     return sheet

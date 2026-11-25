@@ -378,7 +378,8 @@ async def generate(session_id: str) -> None:
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,
                                  db.voice_baseline(exclude_session=session_id),
                                  db.face_baseline(exclude_session=session_id),
-                                 targets=brief_mod.targets(report["categories"]))
+                                 targets=brief_mod.targets(report["categories"]),
+                                 no_target=brief_mod.untimed_stations(brief))
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])
         log.info("Report ready for %s (overall %.1f)", session_id, report["overall_score"])

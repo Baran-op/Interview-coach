@@ -547,6 +547,12 @@ def report_rubric(report: dict | None) -> dict:
     return {"criteria": crit, "criteria_hash": r.get("criteria_hash") or DEFAULT_CRITERIA_HASH, "categories": cats}
 
 
+def untimed_stations(brief: dict | None) -> set[str]:
+    """Stations whose answers get no target length: a scenario station longer than 5 minutes."""
+    return {st["key"] for st in ((brief or {}).get("format") or {}).get("stations") or []
+            if st.get("scenario") and st["minutes"] > 5}
+
+
 def stamp(brief: dict | None) -> dict:
     """The rubric keys stored on each new report and drill attempt."""
     b = brief or default_brief()

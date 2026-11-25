@@ -1,0 +1,9 @@
+Write the sheet from the interview brief and the candidate facts above only.
+
+- "likely_questions": 10 to 15 questions this interview is likely to ask, most likely first. Start from these likely questions from the brief (reword or drop one only if it is a near-duplicate):
+{likely}
+  Then add questions for the brief's competencies that the list does not cover, and the points a sceptical interviewer would probe{probes}.{opening} "category" is one of {categories}. "why" is one short line on what the interviewer is testing.
+- "gaps": one entry for every competency the brief lists (merge near-duplicates): {competencies}. "requirement" is the competency. "cv_evidence" quotes or summarises the candidate fact that shows it, or is null when the candidate facts do not show it (say so honestly, never stretch). "how_to_address" is one or two concrete sentences: how to lead with the evidence, or how to handle the gap truthfully.
+- "stories": {stories}
+- "questions_to_ask": {questions_to_ask}
+

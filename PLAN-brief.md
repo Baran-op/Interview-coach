@@ -553,7 +553,7 @@ No new dependencies. No new local models.
 - [x] I5. Format from the brief: `{context}` and `{script}` slots, conversation flags, stations
       (`[station N]` tag, `turns.station`, per-station time notes, one report entry per station),
       panel, Setup hiding irrelevant options, Interview timer from the brief. Golden tests still pass.
-- [ ] I6. Prep, Drill starters and target lengths from the brief, with today's values as the fallback;
+- [x] I6. Prep, Drill starters and target lengths from the brief, with today's values as the fallback;
       STAR stories only when a category's hint uses STAR.
 - [ ] I7. Docs (README, SPEC, CLAUDE.md) and the end-to-end check with two fictional packs (after you
       approve the requests).

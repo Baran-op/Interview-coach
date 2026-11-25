@@ -51,7 +51,8 @@ def main() -> None:
         turns = db.list_turns(s["id"])
         _fill_words(s["id"], turns)
         targets = brief.targets(brief.report_rubric(report)["categories"])  # older reports: today's targets
-        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / s["id"], targets=targets)
+        delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / s["id"], targets=targets,
+                                 no_target=brief.untimed_stations(feedback.session_brief(s)))
         pack = db.get_pack(s["pack_id"]) or {}
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))
     for a in attempts:

@@ -496,11 +496,22 @@ async def delete_pack(pack_id: str):
     return {"deleted": pack_id}
 
 
+def _current_brief(pack_id: str) -> dict | None:
+    """The pack's saved brief, or None for the default (standard) one."""
+    return (db.get_brief(pack_id) or {}).get("brief")
+
+
+def _labels(current: dict | None) -> dict[str, str]:
+    """Category labels of the pack's brief, for pages that show its own categories."""
+    return {c["key"]: c["label"] for c in (current or brief.default_brief())["categories"]}
+
+
 def _prep_out(pack: dict, record: dict | None) -> dict:
+    current = _current_brief(pack["id"])
     if not record:
-        return {"prep": None}
-    return {"prep": record["sheet"], "created_at": record["created_at"],
-            "stale": record["source_hash"] != prep.source_hash(pack)}
+        return {"prep": None, "labels": _labels(current)}
+    return {"prep": record["sheet"], "created_at": record["created_at"], "labels": _labels(current),
+            "stale": record["source_hash"] != prep.source_hash(pack, current)}
 
 
 @app.get("/packs/{pack_id}/prep")
@@ -519,11 +530,12 @@ async def write_prep(pack_id: str):
         raise HTTPException(404, "Pack not found")
     if not materials.has_text(pack):
         raise HTTPException(422, "Add some materials (a job description, a CV...) to the pack first")
+    current = _current_brief(pack_id)
     try:
-        sheet = await prep.write(pack)
+        sheet = await prep.write(pack, current)
     except prep.PrepError as exc:
         raise HTTPException(502, str(exc))
-    return _prep_out(pack, db.save_prep(pack_id, prep.source_hash(pack), sheet))
+    return _prep_out(pack, db.save_prep(pack_id, prep.source_hash(pack, current), sheet))
 
 
 class BriefGenerateIn(BaseModel):
@@ -611,7 +623,7 @@ async def drill_questions(pack_id: str):
     pack = db.get_pack(pack_id)
     if not pack:
         raise HTTPException(404, "Pack not found")
-    return {"questions": drill.questions_for_pack(pack)}
+    return {"questions": drill.questions_for_pack(pack), "labels": _labels(_current_brief(pack_id))}
 
 
 def _attempt_out(a: dict | None) -> dict | None:

@@ -44,9 +44,27 @@ def question_key(question: str) -> str:
 
 # --------------------------------------------------------- question list --- #
 
-def starter_questions(pack: dict) -> list[dict]:
-    company = (pack.get("company") or "").strip() or "this company"
-    return [{"question": q.replace("{company}", company), "category": c, "source": "starter"} for q, c in STARTERS]
+def starter_questions(pack: dict, brief: dict | None = None) -> list[dict]:
+    """Today's STARTERS, or with a brief: "Tell me about yourself." when it opens with it, then the first
+    likely question of each category (up to 5), source `brief`. A stations brief: one per station."""
+    if brief is None:
+        company = (pack.get("company") or "").strip() or "this company"
+        return [{"question": q.replace("{company}", company), "category": c, "source": "starter"} for q, c in STARTERS]
+    f = brief["format"]
+    if f["kind"] == "stations":
+        return [{"question": f"{st['name']}: {st['scenario'] or st['brief'] or 'practise this station.'}",
+                 "category": st["category"], "source": "brief"} for st in f["stations"]]
+    out = []
+    if f["opening"]:
+        keys = brief_mod.category_keys(brief)
+        out.append({"question": "Tell me about yourself.", "category": "intro" if "intro" in keys else "other",
+                    "source": "brief"})
+    seen: set[str] = set()
+    for q in brief["likely_questions"]:
+        if q["category"] not in seen and len(seen) < 5:
+            seen.add(q["category"])
+            out.append({"question": q["question"], "category": q["category"], "source": "brief"})
+    return out
 
 
 def weak_report_questions(reports: list[dict]) -> list[dict]:
@@ -74,14 +92,14 @@ def _avg(attempt: dict) -> float | None:
 
 
 def assemble_questions(pack: dict, reports: list[dict], attempts: list[dict],
-                       prep_sheet: dict | None = None) -> list[dict]:
+                       prep_sheet: dict | None = None, brief: dict | None = None) -> list[dict]:
     """Starters, weak report questions, prep questions, then custom questions that have attempts.
 
     `attempts` is the pack's attempts, oldest first. Each entry gets `key`, the attempt count and
     the latest and best attempt averages (None until there is one). `prep_sheet` is the pack's
     saved prep sheet, whose likely questions come in with source `prep`.
     """
-    candidates = starter_questions(pack) + weak_report_questions(reports) + prep.drill_questions(prep_sheet)
+    candidates = starter_questions(pack, brief) + weak_report_questions(reports) + prep.drill_questions(prep_sheet)
     by_key: dict[str, list[dict]] = {}
     for a in attempts:
         by_key.setdefault(a["question_key"], []).append(a)
@@ -167,9 +185,12 @@ def user_prompt(question: str, category: str, answer: str, seconds: float | None
     return "\n".join(parts)
 
 
-def build_result(raw: dict, answer: str, seconds: float | None, brief: dict | None = None) -> dict:
-    """Coerce Claude's JSON: clamp scores, average locally, attach local text stats and the rubric."""
+def build_result(raw: dict, answer: str, seconds: float | None, brief: dict | None = None,
+                 category: str | None = None) -> dict:
+    """Coerce Claude's JSON: clamp scores, average locally, attach local text stats (with the target
+    length for the question's category, and a short / long flag) and the rubric."""
     criteria = brief_mod.criteria_keys(brief)
+    target = brief_mod.targets((brief or brief_mod.default_brief())["categories"]).get(category)
     scores = {c: _score((raw.get("scores") or {}).get(c)) for c in criteria}
     stamp = brief_mod.stamp(brief)
     return {
@@ -180,7 +201,8 @@ def build_result(raw: dict, answer: str, seconds: float | None, brief: dict | No
         "tips": [str(t) for t in (raw.get("tips") or []) if t][:4],
         "improved": [str(t) for t in (raw.get("improved") or []) if t][:4],
         "better_answer": str(raw.get("better_answer") or ""),
-        "delivery": {**delivery.text_stats(answer), "seconds": seconds},
+        "delivery": {**delivery.text_stats(answer), "seconds": seconds, "target": list(target) if target else None,
+                     "flag": delivery.length_flag(seconds, target)},
     }
 
 
@@ -193,7 +215,7 @@ async def score(pack: dict, question: str, category: str, answer: str,
             system_prompt(pack, brief), user_prompt(question, category, answer, seconds, previous), schema(brief), model)
     except claude_json.ClaudeJSONError as exc:
         raise DrillError(str(exc)) from exc
-    return build_result(raw, answer, seconds, brief)
+    return build_result(raw, answer, seconds, brief, category)
 
 
 def questions_for_pack(pack: dict) -> list[dict]:
@@ -203,4 +225,5 @@ def questions_for_pack(pack: dict) -> list[dict]:
         if r:
             reports.append(r)
     record = db.get_prep(pack["id"])
-    return assemble_questions(pack, reports, db.list_attempts(pack["id"]), (record or {}).get("sheet"))
+    current = (db.get_brief(pack["id"]) or {}).get("brief")
+    return assemble_questions(pack, reports, db.list_attempts(pack["id"]), (record or {}).get("sheet"), current)

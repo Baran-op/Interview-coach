@@ -488,7 +488,8 @@ def answer_turns(answer: dict, answers: list[dict], turns: list[dict]) -> list[d
 
 
 def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None,
-                    face_baseline: dict | None = None, targets: dict | None = None) -> None:
+                    face_baseline: dict | None = None, targets: dict | None = None,
+                    no_target: set | frozenset = frozenset()) -> None:
     """Add a ``delivery`` object to each answer (in place).
 
     An answer covers the candidate turns after its ``question_turn`` and before the next
@@ -497,6 +498,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
     ``db.voice_baseline()``: your usual voice numbers, used for the voice flags.
     ``face_baseline`` is ``db.face_baseline()``; each answer's turns' ``face`` stats are combined into ``delivery.face``.
     ``targets`` ({category: (min, max) seconds}) come from the report's categories; None is ``TARGET_SECONDS``.
+    An answer whose ``station`` is in ``no_target`` (a scenario station over 5 minutes) gets no target.
     """
     targets = TARGET_SECONDS if targets is None else targets
     starts = sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int))
@@ -522,7 +524,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
         voice = None
         if audio_dir is not None:
             voice = voice_from_wavs(Path(audio_dir) / f"{t['idx']}.wav" for t in mine)
-        target = targets.get(a.get("category"))
+        target = None if a.get("station") in no_target else targets.get(a.get("category"))
         flag = None
         if target:
             flag = "short" if first < target[0] else "long" if first > target[1] else None
@@ -541,6 +543,13 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
             **voice_fields(voice, voice_baseline),
             **add_quotes(face_fields(combine_face([t.get("face") for t in mine]), face_baseline), mine),
         }
+
+
+def length_flag(seconds: float | None, target) -> str | None:
+    """'short' / 'long' against a (min, max) target, or None."""
+    if not target or not seconds:
+        return None
+    return "short" if seconds < target[0] else "long" if seconds > target[1] else None
 
 
 def _mmss(s: float) -> str:

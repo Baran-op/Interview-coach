@@ -200,6 +200,11 @@ How the format runs:
 - **Panel**: the conversation, with the members introduced at the start and each leading the questions
   in their focus area, all in the one voice.
 
+Prep and Drill follow the brief too: the prep sheet starts from its likely questions and competencies
+(STAR stories only when an answer shape uses STAR); Drill's starters are its opening and likely questions,
+or one per station; a drill attempt is scored with the brief's criteria and shows its length against the
+category's target. A station with a scenario longer than 5 minutes has no target length.
+
 Anything Claude guessed rather than read is listed under **To confirm** with a question. Answer it (your
 answers are sent along when you regenerate) or confirm it; the count shows on the pack in Setup. Everything
 is editable and saving is free. When your materials change, the page says so: **Regenerate** (1 request) or
@@ -313,9 +318,9 @@ those words automatically.
 | DELETE | `/packs/{id}/brief` | Back to the standard interview (the default brief) |
 | GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores (`criteria`, plus `criteria_hash`, `criteria_names` and `category_labels` from each report's own rubric), fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
-| GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
-| GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale}`; `stale` is true when the JD, CV or company notes changed since it was written |
-| POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape |
+| GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/brief/report/prep/custom, attempts, latest, best}], labels}` (starters, or with a brief "Tell me about yourself." when it opens with it plus the first likely question of each category, or one per station; then report questions averaging 2.5 or less, the prep sheet's likely questions, then your own). `labels`: the brief's category labels |
+| GET | `/packs/{id}/prep` | The pack's prep sheet: `{prep: {likely_questions, gaps, stories, questions_to_ask} or null, created_at, stale, labels}`; `stale` is true when the materials (with no brief) or the brief changed since it was written |
+| POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape. With a brief it is written from the brief and its candidate facts: likely questions start from the brief's, gaps are the brief's competencies, STAR stories only when a category's answer shape uses STAR, questions to ask only when the interview ends with them |
 | POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` (with `voice`, `voice_flags`, `voice_usual` when audio was sent, and `face`, `face_flags`, `face_usual` when the multipart also has `face`; optional `segments` give the quotes. Times in `face` and `segments` count from the start of the answer) |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
 | POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s). Setup adds the result as an organisation material "Web research: <company>" with the sources appended |

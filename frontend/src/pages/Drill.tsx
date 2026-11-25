@@ -48,6 +48,7 @@ interface Props {
 export default function Drill({ packId, initialQuestion }: Props) {
   const [pack, setPack] = useState<Pack | null>(null)
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
+  const [labels, setLabels] = useState<Record<string, string>>({}) // the brief's category labels
   const [current, setCurrent] = useState<Current | null>(null)
   const [attempts, setAttempts] = useState<DrillAttempt[]>([])
   const [result, setResult] = useState<{ attempt: DrillAttempt; previous: DrillAttempt | null } | null>(null)
@@ -74,7 +75,9 @@ export default function Drill({ packId, initialQuestion }: Props) {
   const speaker = (): Speaker => avatarRef.current ?? player()
 
   const refreshQuestions = useCallback(async () => {
-    setQuestions((await api.drillQuestions(packId)).questions)
+    const q = await api.drillQuestions(packId)
+    setQuestions(q.questions)
+    setLabels(q.labels ?? {})
   }, [packId])
 
   const select = useCallback(
@@ -106,6 +109,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
         if (cancelled) return
         setPack(p)
         setQuestions(q.questions)
+        setLabels(q.labels ?? {})
         if (initialQuestion) {
           const key = await questionKey(initialQuestion)
           const known = q.questions.find((x) => x.key === key)
@@ -332,7 +336,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
                 />
               )}
               <h2>{current.question}</h2>
-              {current.category && <span className="chip">{categoryLabel(current.category)}</span>}
+              {current.category && <span className="chip">{labels[current.category] ?? categoryLabel(current.category)}</span>}
               <div className="actions">
                 <button onClick={() => void playQuestion()} disabled={phase !== 'idle'}>
                   {phase === 'speaking' ? 'Speaking…' : 'Hear the question'}
@@ -380,6 +384,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
                       <span className="chip">{delta(result.attempt.result.average - result.previous.result.average)} since last time</span>
                     )}
                   </h3>
+                  <LengthLine d={result.attempt.result.delivery} />
                   <div className="bars">
                     {reportCriteria(result.attempt.result).map((c) => (
                       <Bar key={c.key} label={c.name} value={result.attempt.result!.scores[c.key] ?? 0} />
@@ -490,6 +495,19 @@ export default function Drill({ packId, initialQuestion }: Props) {
         </section>
       </div>
     </div>
+  )
+}
+
+/** "1:12 (aim 1:00-1:30), too long" from the attempt's length and its category's target. */
+function LengthLine({ d }: { d?: Record<string, unknown> & { seconds?: number | null } }) {
+  const target = d?.target as [number, number] | null | undefined
+  if (!d?.seconds || !target) return null
+  const mmss = (s: number) => clock(s * 1000)
+  return (
+    <p className="small delivery-line">
+      Length <span className={d.flag ? 'out-of-target' : ''}>{mmss(d.seconds)}</span> (aim {mmss(target[0])}-{mmss(target[1])})
+      {d.flag === 'short' ? ', on the short side' : d.flag === 'long' ? ', on the long side' : ''}
+    </p>
   )
 }
 

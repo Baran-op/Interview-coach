@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { api, CATEGORY_LABEL, type Pack, type PrepResponse, type PrepSheet } from '../api'
 
+const label = (key: string, labels?: Record<string, string>) => labels?.[key] ?? CATEGORY_LABEL[key] ?? key
+
 /** The sheet as Markdown, for download. */
-export function prepMarkdown(pack: Pack, sheet: PrepSheet): string {
+export function prepMarkdown(pack: Pack, sheet: PrepSheet, labels?: Record<string, string>): string {
   const out: string[] = [`# Prep sheet: ${pack.title}`, '']
   out.push('## Likely questions', '')
   sheet.likely_questions.forEach((q, i) => {
-    out.push(`${i + 1}. **${q.question}** (${CATEGORY_LABEL[q.category] ?? q.category})`)
+    out.push(`${i + 1}. **${q.question}** (${label(q.category, labels)})`)
     if (q.why) out.push(`   - Tests: ${q.why}`)
   })
   out.push('', '## CV against the job', '')
@@ -14,7 +16,7 @@ export function prepMarkdown(pack: Pack, sheet: PrepSheet): string {
     out.push(`- **${g.requirement}**: ${g.cv_evidence ? `evidence: ${g.cv_evidence}` : 'MISSING from the CV'}`)
     if (g.how_to_address) out.push(`  - How to address: ${g.how_to_address}`)
   }
-  out.push('', '## STAR stories', '')
+  if (sheet.stories.length) out.push('', '## STAR stories', '')
   for (const s of sheet.stories) {
     out.push(`### ${s.title}`, '')
     if (s.competencies.length) out.push(`Shows: ${s.competencies.join(', ')}`, '')
@@ -22,7 +24,7 @@ export function prepMarkdown(pack: Pack, sheet: PrepSheet): string {
     if (s.numbers.length) out.push(`- **Numbers:** ${s.numbers.join('; ')}`)
     out.push('')
   }
-  out.push('## Questions to ask', '')
+  if (sheet.questions_to_ask.length) out.push('## Questions to ask', '')
   sheet.questions_to_ask.forEach((q) => out.push(`- ${q}`))
   return out.join('\n') + '\n'
 }
@@ -75,7 +77,7 @@ export default function Prep({ packId }: { packId: string }) {
         <div className="actions">
           <a className="button-link" href={`#/drill/${packId}`}>Drill</a>
           {pack && sheet && (
-            <button type="button" onClick={() => download(`prep-${pack.title.replace(/\W+/g, '-')}.md`, prepMarkdown(pack, sheet))}>
+            <button type="button" onClick={() => download(`prep-${pack.title.replace(/\W+/g, '-')}.md`, prepMarkdown(pack, sheet, data?.labels))}>
               Download Markdown
             </button>
           )}
@@ -87,7 +89,7 @@ export default function Prep({ packId }: { packId: string }) {
 
       {error && <div className="banner error">{error}</div>}
       {data?.stale && (
-        <div className="banner">The job description, CV or company notes have changed since this sheet was written. Rewrite it to bring it up to date.</div>
+        <div className="banner">Your materials or interview brief have changed since this sheet was written. Rewrite it to bring it up to date.</div>
       )}
       {!sheet && data && !busy && <p className="muted">No prep sheet yet. It takes one Claude request and a minute or so.</p>}
 
@@ -97,7 +99,7 @@ export default function Prep({ packId }: { packId: string }) {
           <ol>
             {sheet.likely_questions.map((q) => (
               <li key={q.question}>
-                <strong>{q.question}</strong> <span className="muted small">{CATEGORY_LABEL[q.category] ?? q.category}</span>{' '}
+                <strong>{q.question}</strong> <span className="muted small">{label(q.category, data?.labels)}</span>{' '}
                 <a className="button-link" href={`#/drill/${packId}?q=${encodeURIComponent(q.question)}`}>Practise</a>
                 {q.why && <div className="muted small">{q.why}</div>}
               </li>
@@ -122,7 +124,7 @@ export default function Prep({ packId }: { packId: string }) {
             </table>
           </div>
 
-          <h3>STAR stories</h3>
+          {sheet.stories.length > 0 && <h3>STAR stories</h3>}
           {sheet.stories.map((s) => (
             <details key={s.title} className="story">
               <summary>
@@ -136,7 +138,7 @@ export default function Prep({ packId }: { packId: string }) {
             </details>
           ))}
 
-          <h3>Questions to ask</h3>
+          {sheet.questions_to_ask.length > 0 && <h3>Questions to ask</h3>}
           <ul>
             {sheet.questions_to_ask.map((q) => <li key={q}>{q}</li>)}
           </ul>

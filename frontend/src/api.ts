@@ -452,11 +452,13 @@ export interface PrepSheet {
 export interface PrepResponse {
   prep: PrepSheet | null
   created_at?: number
-  /** True when the JD, CV or company notes changed since the sheet was written. */
+  /** True when the materials (or, with a brief, the brief) changed since the sheet was written. */
   stale?: boolean
+  /** Category labels of the pack's brief. */
+  labels: Record<string, string>
 }
 
-export type DrillSource = 'starter' | 'report' | 'prep' | 'custom'
+export type DrillSource = 'starter' | 'brief' | 'report' | 'prep' | 'custom'
 
 export interface DrillQuestion {
   key: string
@@ -626,7 +628,8 @@ export const api = {
   getPrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`),
   /** One Claude request. */
   writePrep: (packId: string) => request<PrepResponse>(`/packs/${packId}/prep`, { method: 'POST' }),
-  drillQuestions: (packId: string) => request<{ questions: DrillQuestion[] }>(`/packs/${packId}/drill`),
+  drillQuestions: (packId: string) =>
+    request<{ questions: DrillQuestion[]; labels: Record<string, string> }>(`/packs/${packId}/drill`),
   drillAttempts: (packId: string, key: string) =>
     request<{ attempts: DrillAttempt[] }>(`/packs/${packId}/drill/attempts?key=${encodeURIComponent(key)}`),
   /** One Claude request. Typed answer (`text`) or a spoken one (`wav` plus its length in seconds). */
