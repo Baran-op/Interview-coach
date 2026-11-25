@@ -42,7 +42,7 @@ function Section({ title, meta, children, open }: { title: string; meta?: string
   )
 }
 
-export default function Brief({ packId, generate }: { packId: string; generate?: boolean }) {
+export default function Brief({ packId, generate, onStart }: { packId: string; generate?: boolean; onStart: (pack: Pack) => void }) {
   const [pack, setPack] = useState<Pack | null>(null)
   const [state, setState] = useState<BriefState | null>(null)
   const [draft, setDraft] = useState<BriefT | null>(null)
@@ -175,6 +175,18 @@ export default function Brief({ packId, generate }: { packId: string; generate?:
           </p>
         </div>
         <div className="actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={!!busy}
+            onClick={() => {
+              if (dirty && !window.confirm('Start without saving your changes to the brief?')) return
+              // Fresh pack: its brief_meta (format, minutes) drives the timer.
+              api.getPack(packId).then(onStart, (e: Error) => setError(e.message))
+            }}
+          >
+            Start interview
+          </button>
           <a className="button-link" href={`#/edit/${packId}`}>Materials</a>
           <a className="button-link" href={`#/prep/${packId}`}>Prep</a>
           <a className="button-link" href={`#/drill/${packId}`}>Drill</a>

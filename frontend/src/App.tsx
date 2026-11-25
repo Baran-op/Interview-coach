@@ -99,7 +99,12 @@ export default function App() {
         {screen.name === 'history' && <History onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
         {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} />}
         {screen.name === 'prep' && <Prep key={screen.packId} packId={screen.packId} />}
-        {screen.name === 'brief' && <Brief key={screen.packId} packId={screen.packId} generate={screen.generate} />}
+        {screen.name === 'brief' && <Brief
+            key={screen.packId}
+            packId={screen.packId}
+            generate={screen.generate}
+            onStart={(pack) => go({ name: 'interview', pack }, '#/interview')}
+          />}
         {screen.name === 'interview' && (
           <Interview
             pack={screen.pack}
