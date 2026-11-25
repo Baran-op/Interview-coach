@@ -139,6 +139,7 @@ The chips under each interviewer message show the expression tags parsed from th
   Model answers use only facts from your answers and CV: anything missing appears as a
   placeholder like `[% improvement]`. If a report fails, the Review page has a **Try again**
   button, which costs one more request.
+- **Sessions build on each other.** A new session of a pack is told (privately) what earlier non-partial sessions asked and scored, so it re-tests your weakest area with a new question and doesn't repeat questions that scored 4 or more. The report has a "Since last time" section saying whether the previous session's top fixes improved, partly, not yet or weren't tested. No extra requests.
 - To help count fillers, Whisper is prompted to keep "um"/"uh" instead of cleaning them up.
 
 Packs, sessions, turns (with timings) and reports are stored in `data/interview.db`, and

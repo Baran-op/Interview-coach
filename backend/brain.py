@@ -105,7 +105,42 @@ def time_note(opts: dict, started_at_ms: int, now_ms: int) -> str:
     return f"(Time: {used} of {minutes} min used.) "
 
 
-def build_system_prompt(pack: dict) -> str:
+FIRST_SESSION_NOTE = "(This is the candidate's first session for this role.)"
+
+
+def history_block(history: list[dict] | None) -> str:
+    """Text for the {history} slot: earlier questions with scores and the open fixes."""
+    if not history:
+        return FIRST_SESSION_NOTE
+    lines = [
+        "Earlier sessions for this role, newest first. This is background for you only."
+    ]
+    for i, sess in enumerate(history, 1):
+        label = "Last session" if i == 1 else f"{i} sessions ago"
+        when = sess.get("started_at")
+        if when:
+            from datetime import datetime
+            label += " (" + datetime.fromtimestamp(when / 1000).strftime("%Y-%m-%d") + ")"
+        lines.append(f"{label}, questions with average score out of 5:")
+        for a in sess.get("answers") or []:
+            lines.append(f"- [{a.get('category', 'other')}] {a.get('question', '')} ({a.get('average')})")
+        fixes = sess.get("top_fixes") or []
+        if i == 1 and fixes:
+            lines.append("Fixes still open from that session:")
+            lines += [f"- {f}" for f in fixes]
+    lines += [
+        "",
+        "Use this as follows:",
+        "- Still open with \"tell me about yourself\" and the motivation question: they are practised every time.",
+        "- In the main questions, re-test the weakest earlier area with a NEW question (not the same wording), "
+        "do not repeat a question that scored 4 or more, and prefer requirements from the job description that "
+        "no earlier question tested.",
+        "- Never mention earlier sessions, scores or fixes out loud.",
+    ]
+    return "\n".join(lines)
+
+
+def build_system_prompt(pack: dict, history: list[dict] | None = None) -> str:
     opts = pack.get("options") or {}
     template = (PROMPTS_DIR / "interviewer.txt").read_text(encoding="utf-8")
     values = {
@@ -117,6 +152,7 @@ def build_system_prompt(pack: dict) -> str:
         "profile": pack.get("profile") or "(not provided)",
         "company_notes": pack.get("company_notes") or "(none)",
         "type": opts.get("interview_type") or "mixed",
+        "history": history_block(history),
         "n": opts.get("num_questions") or 5,
         "difficulty": opts.get("difficulty") or "medium",
         "length": length_instruction(opts),

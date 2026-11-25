@@ -455,7 +455,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 **Phase C: memory across sessions**
 
-- [ ] C1. 2 Interviewer history and the previous-fixes check
+- [x] C1. 2 Interviewer history and the previous-fixes check
 
 **Phase D: drill mode**
 

@@ -136,6 +136,7 @@ export interface Report {
   filler_words: { count: number; examples: string[]; by_word: Record<string, number> }
   avg_answer_seconds: number | null
   top_fixes: string[]
+  previous_fixes?: { fix: string; status: 'improved' | 'partly' | 'not_yet' | 'not_tested'; evidence: string }[]
 }
 
 export interface ReportResponse {

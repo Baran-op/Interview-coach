@@ -79,7 +79,16 @@ def _transcript(turns: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _system_prompt(pack: dict) -> str:
+FIX_STATUSES = ("improved", "partly", "not_yet", "not_tested")
+
+
+def previous_fixes_text(fixes: list[str] | None) -> str:
+    if not fixes:
+        return "none"
+    return "\n".join(f"{i}. {f}" for i, f in enumerate(fixes, 1))
+
+
+def _system_prompt(pack: dict, previous_fixes: list[str] | None = None) -> str:
     opts = pack.get("options") or {}
     values = {
         "role": pack.get("role") or "the role",
@@ -89,6 +98,7 @@ def _system_prompt(pack: dict) -> str:
         "jd": pack.get("jd") or "(not provided)",
         "profile": pack.get("profile") or "(not provided)",
         "company_notes": pack.get("company_notes") or "(not provided)",
+        "previous_fixes": previous_fixes_text(previous_fixes),
     }
     text = (PROMPTS_DIR / "feedback.txt").read_text(encoding="utf-8")
     for k, v in values.items():
@@ -121,6 +131,18 @@ REPORT_SCHEMA = {
         "summary": {"type": "string"},
         "answers": {"type": "array", "items": _ANSWER_SCHEMA},
         "top_fixes": {"type": "array", "items": {"type": "string"}},
+        "previous_fixes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "fix": {"type": "string"},
+                    "status": {"type": "string", "enum": list(FIX_STATUSES)},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["fix", "status"],
+            },
+        },
     },
     "required": ["summary", "answers", "top_fixes"],
 }
@@ -167,6 +189,16 @@ def normalise(raw: dict, turns: list[dict]) -> dict:
     if not answers:
         raise FeedbackError("The report had no scored answers")
     fixes = [str(f) for f in (raw.get("top_fixes") or []) if f][:3]
+    previous = []
+    for p in raw.get("previous_fixes") or []:
+        if not isinstance(p, dict) or not p.get("fix"):
+            continue
+        status = str(p.get("status") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        previous.append({
+            "fix": str(p["fix"]),
+            "status": status if status in FIX_STATUSES else "not_tested",
+            "evidence": str(p.get("evidence") or ""),
+        })
     candidate_texts = [t["text"] for t in turns if t["speaker"] == "candidate"]
     return {
         # Mean of the per-answer averages: comparable across sessions.
@@ -176,7 +208,21 @@ def normalise(raw: dict, turns: list[dict]) -> dict:
         "filler_words": filler_words(candidate_texts),
         "avg_answer_seconds": answer_seconds(turns),
         "top_fixes": fixes,
+        "previous_fixes": previous[:3],
     }
+
+
+_FIX_MARKS = {"improved": "✓ Improved", "partly": "~ Partly", "not_yet": "✗ Not yet", "not_tested": "– Not tested"}
+
+
+def _since_last_time_md(report: dict) -> list[str]:
+    prev = report.get("previous_fixes") or []
+    if not prev:
+        return []
+    out = ["## Since last time", ""]
+    for p in prev:
+        out.append(f"- **{_FIX_MARKS.get(p['status'], p['status'])}:** {p['fix']}" + (f" ({p['evidence']})" if p.get("evidence") else ""))
+    return [*out, ""]
 
 
 def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | None = None) -> str:
@@ -193,6 +239,7 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
         "",
         report["summary"],
         "",
+        *_since_last_time_md(report),
         "## Top 3 things to fix",
         "",
         *[f"{i}. {f}" for i, f in enumerate(report["top_fixes"], 1)],
@@ -249,7 +296,9 @@ async def generate(session_id: str) -> None:
         turns = db.list_turns(session_id)
         if not any(t["speaker"] == "candidate" for t in turns):
             raise FeedbackError("There are no answers to score: the interview ended before you answered.")
-        raw = await _ask_claude(_system_prompt(pack), _transcript(turns))
+        earlier = db.pack_report_history(session["pack_id"], limit=1, before=session["started_at"])
+        fixes = earlier[0]["top_fixes"] if earlier else []
+        raw = await _ask_claude(_system_prompt(pack, fixes), _transcript(turns))
         report = normalise(raw, turns)
         db.save_report(session_id, report, to_markdown(report, pack, session, turns))
         db.set_overall_score(session_id, report["overall_score"])

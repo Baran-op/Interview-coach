@@ -432,7 +432,7 @@ async def start_session(body: SessionIn):
     if not pack:
         raise HTTPException(404, "Pack not found")
 
-    brain = InterviewBrain(build_system_prompt(pack))
+    brain = InterviewBrain(build_system_prompt(pack, db.pack_report_history(pack["id"])))
     try:
         await brain.start()
     except BrainError as exc:

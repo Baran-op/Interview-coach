@@ -252,6 +252,23 @@ export default function Review({ sessionId, onStart }: Props) {
             )}
             {previous && <Comparison report={r} previous={previous} />}
 
+            {(r.previous_fixes?.length ?? 0) > 0 && (
+              <>
+                <h3>Since last time</h3>
+                <ul className="fixes">
+                  {r.previous_fixes!.map((p, i) => (
+                    <li key={i}>
+                      <strong>
+                        {{ improved: '✓ Improved', partly: '~ Partly', not_yet: '✗ Not yet', not_tested: '– Not tested' }[p.status]}:
+                      </strong>{' '}
+                      {p.fix}
+                      {p.evidence && <span className="muted"> ({p.evidence})</span>}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
             <h3>Top 3 things to fix</h3>
             <ol className="fixes">
               {r.top_fixes.map((f, i) => (

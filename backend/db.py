@@ -365,3 +365,45 @@ def history() -> list[dict]:
         out.append({"pack": pack, "sessions": sessions, "last_used": last})
     out.sort(key=lambda x: -x["last_used"])
     return out
+
+
+def pack_report_history(pack_id: str, limit: int = 3, before: int | None = None) -> list[dict]:
+    """The latest scored, non-partial sessions of a pack, newest first.
+
+    Each item is {started_at, answers: [{question, category, average}], top_fixes}.
+    `before` (a started_at in ms) keeps only sessions that started earlier, so a
+    regenerated report only sees the sessions that preceded it.
+    """
+    sql = (
+        "SELECT s.started_at, r.report_json FROM sessions s JOIN reports r ON r.session_id = s.id "
+        "WHERE s.pack_id = ? AND r.status = 'ready' AND r.report_json IS NOT NULL "
+    )
+    args: list = [pack_id]
+    if before is not None:
+        sql += "AND s.started_at < ? "
+        args.append(before)
+    sql += "ORDER BY s.started_at DESC"
+    out: list[dict] = []
+    with connect() as conn:
+        rows = conn.execute(sql, args).fetchall()
+    for row in rows:
+        report = json.loads(row["report_json"])
+        answers = report.get("answers") or []
+        if not answers or is_partial(len(answers)):
+            continue
+        out.append({
+            "started_at": row["started_at"],
+            "answers": [
+                {
+                    "question": a.get("question", ""),
+                    "category": resolve_category(a.get("category"), a.get("question", "")),
+                    "average": a.get("average") if a.get("average") is not None
+                    else round(sum(a["scores"].values()) / len(a["scores"]), 1),
+                }
+                for a in answers
+            ],
+            "top_fixes": [str(f) for f in report.get("top_fixes") or []],
+        })
+        if len(out) >= limit:
+            break
+    return out
