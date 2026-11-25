@@ -72,10 +72,10 @@ def wav_to_float32(data: bytes) -> np.ndarray:
     return audio
 
 
-def _transcribe_array(audio: np.ndarray, prompt: str | None) -> str:
+def _transcribe_array(audio: np.ndarray, prompt: str | None, words: bool = False) -> dict:
     import mlx_whisper
 
-    result = mlx_whisper.transcribe(
+    return mlx_whisper.transcribe(
         audio,
         path_or_hf_repo=MODEL,
         language="en",
@@ -83,8 +83,8 @@ def _transcribe_array(audio: np.ndarray, prompt: str | None) -> str:
         condition_on_previous_text=False,
         temperature=(0.0, 0.2, 0.4),   # fewer retries than the default: faster
         verbose=None,
+        word_timestamps=words,
     )
-    return (result.get("text") or "").strip()
 
 
 def transcribe(wav_bytes: bytes, prompt: str | None = None) -> str:
@@ -92,10 +92,34 @@ def transcribe(wav_bytes: bytes, prompt: str | None = None) -> str:
     audio = wav_to_float32(wav_bytes)
     if len(audio) < SAMPLE_RATE * 0.3:
         return ""
-    text = _transcribe_array(audio, prompt)
+    text = (_transcribe_array(audio, prompt).get("text") or "").strip()
     if text.lower() in _HALLUCINATIONS:
         return ""
     return text
+
+
+def clean_words(result: dict) -> list[dict]:
+    """``[{"w": "slipped", "start_ms": 1200, "end_ms": 1560}, ...]`` from a word-timestamp result, offsets in the WAV."""
+    out = []
+    for seg in result.get("segments") or []:
+        for w in seg.get("words") or []:
+            text = str(w.get("word") or "").strip()
+            a, b = w.get("start"), w.get("end")
+            if text and a is not None and b is not None:
+                out.append({"w": text, "start_ms": int(round(float(a) * 1000)), "end_ms": int(round(float(b) * 1000))})
+    return out
+
+
+def words_from_wav(wav_path) -> list[dict]:
+    """Word offsets for one saved answer WAV. Call on the MLX thread. [] for audio too short to transcribe.
+
+    Measured on a 41 s clip, word timestamps add about 0.75 s to a transcription (1 s per minute), over the
+    0.5 s budget, so this runs in the report step from the saved WAVs instead of inside `transcribe`.
+    """
+    audio = wav_to_float32(open(wav_path, "rb").read())
+    if len(audio) < SAMPLE_RATE * 0.3:
+        return []
+    return clean_words(_transcribe_array(audio, None, words=True))
 
 
 # ------------------------------------------------------------------ prompt --- #

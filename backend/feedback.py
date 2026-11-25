@@ -236,7 +236,8 @@ def _face_moments_md(d: dict | None) -> list[str]:
     from .delivery import face_moment_text
 
     moments = ((d or {}).get("face") or {}).get("moments") or []
-    return [*[f"- {face_moment_text(m)}" for m in moments], ""] if moments else []
+    lines = [f"- {face_moment_text(m)}" + (f", while saying: \u201c{m['quote']}\u201d" if m.get("quote") else "") for m in moments]
+    return [*lines, ""] if moments else []
 
 
 def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | None = None) -> str:
@@ -302,6 +303,26 @@ def to_markdown(report: dict, pack: dict, session: dict, turns: list[dict] | Non
 
 # ---------------------------------------------------------------- entry --- #
 
+def turns_needing_words(turns: list[dict]) -> list[dict]:
+    """Spoken turns with face data and speech segments (so a quote is possible) but no word offsets yet."""
+    return [t for t in turns if t["speaker"] == "candidate" and t.get("segments") and t.get("face") and t.get("words") is None]
+
+
+async def _fill_words(session_id: str, turns: list[dict]) -> None:
+    """Word offsets from the saved WAVs, on the MLX thread, for the quotes under face moments. Never fails the report."""
+    from . import gpu, stt
+
+    for t in turns_needing_words(turns):
+        path = db.ANSWERS_DIR / session_id / f"{t['idx']}.wav"
+        if not path.exists():
+            continue
+        try:
+            t["words"] = await gpu.run(stt.words_from_wav, path)
+            db.set_turn_words(session_id, t["idx"], t["words"])
+        except Exception as exc:
+            log.warning("Word timestamps failed for %s turn %s: %s", session_id, t["idx"], exc)
+
+
 async def generate(session_id: str) -> None:
     """Build and store the report for a session. Errors are stored, not raised."""
     try:
@@ -316,6 +337,7 @@ async def generate(session_id: str) -> None:
         fixes = earlier[0]["top_fixes"] if earlier else []
         raw = await _ask_claude(_system_prompt(pack, fixes), _transcript(turns))
         report = normalise(raw, turns)
+        await _fill_words(session_id, turns)
         from . import delivery  # imported here: delivery imports this module
 
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / session_id,

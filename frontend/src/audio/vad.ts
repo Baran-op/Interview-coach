@@ -1,9 +1,15 @@
 import { MicVAD } from '@ricky0123/vad-web'
 import { concatFloat32 } from './wav'
 
+/** One kept speech segment on the session clock; the answer's audio is these joined, so end - start is also its length there. */
+export interface SpeechSegment {
+  start_ms: number
+  end_ms: number
+}
+
 export interface TurnCallbacks {
-  /** My whole answer, 16 kHz mono. `bySilence`: ended by the silence timeout (not Done / Space). */
-  onTurn: (audio: Float32Array, bySilence: boolean) => void
+  /** My whole answer, 16 kHz mono. `bySilence`: ended by the silence timeout (not Done / Space). `segments` are in time order. */
+  onTurn: (audio: Float32Array, bySilence: boolean, segments: SpeechSegment[]) => void
   /** finish() was called but nothing usable was recorded. */
   onEmpty?: () => void
   onSpeechStart?: () => void
@@ -24,6 +30,7 @@ const SAMPLE_RATE = 16000
 export class TurnListener {
   private vad: MicVAD | null = null
   private segments: Float32Array[] = []
+  private times: SpeechSegment[] = []
   private held = false
   private spaceHeld = false
   private collecting = false // finish()/suspend() in progress: just collect segments
@@ -33,9 +40,11 @@ export class TurnListener {
   private cb: TurnCallbacks
   private silenceMs: number
   private manual: boolean // Done-only mode: silences never end the turn
+  private clock: () => number // the session clock, to time each kept segment
 
-  constructor(cb: TurnCallbacks, silenceMs = 2000) {
+  constructor(cb: TurnCallbacks, silenceMs = 2000, clock: () => number = () => 0) {
     this.cb = cb
+    this.clock = clock
     this.manual = silenceMs === 0
     this.silenceMs = silenceMs || 2000 // still used by the VAD for segmenting
   }
@@ -73,6 +82,9 @@ export class TurnListener {
       onSpeechEnd: (audio: Float32Array) => {
         this._speaking = false
         this.segments.push(audio)
+        // vad-web hands over the segment when it ends (or on pause), so "now" is its end.
+        const end = Math.round(this.clock())
+        this.times.push({ start_ms: Math.max(0, end - Math.round((audio.length / SAMPLE_RATE) * 1000)), end_ms: end })
         this.cb.onSpeechEnd?.()
         if (!this.held && !this.collecting && this._listening) {
           // Long enough silence: the answer is over.
@@ -100,6 +112,7 @@ export class TurnListener {
   async listen(): Promise<void> {
     if (!this.vad) throw new Error('VAD not initialised')
     this.segments = []
+    this.times = []
     this.held = this.manual
     this.spaceHeld = false
     this._listening = true
@@ -165,14 +178,17 @@ export class TurnListener {
     await this.pauseVad()
     this.collecting = false
     this.segments = []
+    this.times = []
   }
 
   private deliver(bySilence: boolean) {
     const audio = concatFloat32(this.segments)
+    const times = this.times
     this.segments = []
+    this.times = []
     this._speaking = false
     if (audio.length < SAMPLE_RATE * 0.3) this.cb.onEmpty?.()
-    else this.cb.onTurn(audio, bySilence)
+    else this.cb.onTurn(audio, bySilence, times)
   }
 
   async destroy(): Promise<void> {

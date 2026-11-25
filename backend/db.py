@@ -95,6 +95,8 @@ _EXTRA_COLUMNS = {
     "turns": {
         "t_listen_ms": "INTEGER",  # when the mic opened for this answer
         "face_json": "TEXT",       # per-answer face stats from the browser (numbers only)
+        "words_json": "TEXT",      # word offsets in the answer WAV, filled in by the report step
+        "segments_json": "TEXT",   # session-clock start/end of each kept speech segment (maps WAV offsets to the recording)
     },
 }
 
@@ -195,6 +197,22 @@ def add_turn(session_id: str, speaker: str, text: str, expressions: list | None 
     return idx
 
 
+def set_turn_segments(session_id: str, idx: int, segments: list | None) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE turns SET segments_json = ? WHERE session_id = ? AND idx = ?",
+            (json.dumps(segments) if segments else None, session_id, idx),
+        )
+
+
+def set_turn_words(session_id: str, idx: int, words: list | None) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE turns SET words_json = ? WHERE session_id = ? AND idx = ?",
+            (json.dumps(words) if words is not None else None, session_id, idx),
+        )
+
+
 def set_turn_face(session_id: str, idx: int, face: dict | None) -> None:
     with connect() as conn:
         conn.execute(
@@ -288,6 +306,8 @@ def list_turns(session_id: str) -> list[dict]:
         d = dict(r)
         d["expressions"] = json.loads(d.pop("expressions_json") or "[]")
         d["face"] = json.loads(d.pop("face_json") or "null")
+        d["words"] = json.loads(d.pop("words_json") or "null")
+        d["segments"] = json.loads(d.pop("segments_json") or "null")
         out.append(d)
     return out
 

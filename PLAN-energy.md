@@ -302,7 +302,7 @@ dependency.
 - [x] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [x] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json` (built; camera and performance check still to verify by hand, see "H4 still to verify")
 - [x] H5. 2b Face stats in the report and Review, with timed moments on the recording (built; needs real camera data to verify, see "H5 still to verify")
-- [ ] H6. 2c What you were saying at each moment (word timestamps, VAD segments)
+- [x] H6. 2c What you were saying at each moment (word timestamps, VAD segments) (built; the quotes need a real webcam session to check, see "H6 still to verify")
 - [ ] H7. 2d Face stats in Drill
 - [ ] H8. 3 Delivery trends in History (optional)
 
@@ -354,3 +354,16 @@ Built, unit-tested on synthetic numbers and type-checked, never seen with real c
 4. Avatar-mode note: Review decides from the current Setup record-mode preference (the mode used is not stored per
    session), so it can be wrong for an older session.
 5. The timeline bands sit just above the turn markers, not below them.
+
+## H6 still to verify
+
+Built and unit-tested (`words_at`, `clean_segments`), type-checked, never seen with a real session:
+
+1. Word timestamps measured with `mlx_whisper` on this machine (41 s synthetic speech, warm): 4.5 s without, 5.3 s with,
+   so about +0.75 s (roughly 1 s per minute). That is over the 0.5 s budget, so words are NOT taken in `stt.transcribe`;
+   `feedback._fill_words` gets them from the saved WAVs in the report step (only for turns with segments and face data)
+   and stores them in `turns.words_json`. Adds a few seconds per answer to report time.
+2. `TurnListener` times each segment as "now minus its audio length" when vad-web hands it over (end = callback time,
+   including the redemption silence and the 300 ms pre-pad). Check by hand that a quote matches the recording for three
+   moments; if quotes are consistently early or late, the offset is here.
+3. Run `python -m scripts.backfill_delivery` to add quotes to sessions recorded after this change (older ones have no segments).

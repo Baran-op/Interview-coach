@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from . import db, delivery, drill, feedback, gpu, prep, research, stt, tts
 from .categories import resolve_category
 from .face import clean_face
+from .segments import clean_segments
 from .brain import (
     OPENING_CUE,
     time_note,
@@ -654,6 +655,7 @@ async def take_turn(session_id: str, request: Request):
         stt_ms = None
         audio_bytes = None
         face_raw = None
+        segments_raw = None
         if request.headers.get("content-type", "").startswith("multipart/form-data"):
             form = await request.form()
             upload = form.get("audio")
@@ -664,6 +666,7 @@ async def take_turn(session_id: str, request: Request):
             data = await upload.read()
             audio_bytes = data
             face_raw = form.get("face")
+            segments_raw = form.get("segments")
             try:
                 answer = await gpu.run(stt.transcribe, data, live.stt_prompt)
             except Exception as exc:
@@ -685,6 +688,9 @@ async def take_turn(session_id: str, request: Request):
     face = clean_face(face_raw, int(time.time() * 1000) - live.started_at_ms + 2000)
     if face:
         db.set_turn_face(session_id, turn_idx, face)
+    segments = clean_segments(segments_raw, int(time.time() * 1000) - live.started_at_ms + 2000) if audio_bytes else None
+    if segments:
+        db.set_turn_segments(session_id, turn_idx, segments)
     if audio_bytes:
         asyncio.create_task(asyncio.to_thread(_save_answer_audio, session_id, turn_idx, audio_bytes))
     to_claude = time_note(live.options, live.started_at_ms, int(time.time() * 1000)) + answer

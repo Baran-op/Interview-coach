@@ -489,7 +489,12 @@ function MomentList({ moments, canSeek, onSeek, note }: { moments: FaceMoment[];
       <ul>
         {moments.map((m, i) => (
           <li key={i}>
-            {momentText(m)}{' '}
+            {momentText(m)}
+            {m.quote && (
+              <>
+                , while saying: <em>{'\u201c'}{m.quote}{'\u201d'}</em>
+              </>
+            )}{' '}
             {canSeek && (
               <button className="small ghost" aria-label={`Play from ${clock(m.start_ms)}`} onClick={() => onSeek(m.start_ms)}>
                 ▶

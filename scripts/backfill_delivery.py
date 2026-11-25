@@ -3,7 +3,9 @@
     python -m scripts.backfill_delivery
 
 Every report's per-answer ``delivery`` is rebuilt from its transcript and ``data/answers/<session>/``;
-every drill attempt with audio gets its voice fields. Face stats (from each turn's stored `face_json`) are
+every drill attempt with audio gets its voice fields. Turns with speech segments and face data but no word
+offsets get them from Whisper (a few seconds per answer; skipped when mlx-whisper is missing), for the
+quotes under face moments. Face stats (from each turn's stored `face_json`) are
 combined per answer, with flags and moments, in the same passes. Scores and text are left as they are. Runs in two
 passes so the voice baseline exists before any flags are set (PLAN-energy.md, 1c).
 """
@@ -15,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import db, delivery, feedback  # noqa: E402
+from backend import db, delivery, feedback, stt  # noqa: E402
 
 
 def _reports() -> list[tuple[dict, dict]]:
@@ -27,6 +29,19 @@ def _reports() -> list[tuple[dict, dict]]:
     return out
 
 
+def _fill_words(session_id: str, turns: list[dict]) -> None:
+    for t in feedback.turns_needing_words(turns):
+        path = db.ANSWERS_DIR / session_id / f"{t['idx']}.wav"
+        if not path.exists():
+            continue
+        try:
+            t["words"] = stt.words_from_wav(path)
+            db.set_turn_words(session_id, t["idx"], t["words"])
+        except Exception as exc:  # no mlx-whisper, no model
+            print(f"  no word timestamps for {session_id} turn {t['idx']}: {exc}")
+            return
+
+
 def main() -> None:
     db.init()
     reports = _reports()
@@ -34,6 +49,7 @@ def main() -> None:
     # Pass 1: stats and voice numbers, no baseline yet.
     for s, report in reports:
         turns = db.list_turns(s["id"])
+        _fill_words(s["id"], turns)
         delivery.answer_delivery(report["answers"], turns, db.ANSWERS_DIR / s["id"])
         pack = db.get_pack(s["pack_id"]) or {}
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))
@@ -47,13 +63,13 @@ def main() -> None:
     for s, report in reports:
         base = db.voice_baseline(exclude_session=s["id"])
         face_base = db.face_baseline(exclude_session=s["id"])
+        turns = db.list_turns(s["id"])
         for ans in report["answers"]:
             d = ans.get("delivery")
             if d:
                 d.update(delivery.voice_fields(d.get("voice"), base))
-                d.update(delivery.face_fields(d.get("face"), face_base))
+                d.update(delivery.add_quotes(delivery.face_fields(d.get("face"), face_base), delivery.answer_turns(ans, report["answers"], turns)))
                 flagged += bool(d["voice_flags"] or d.get("face_flags"))
-        turns = db.list_turns(s["id"])
         pack = db.get_pack(s["pack_id"]) or {}
         db.update_report_content(s["id"], report, feedback.to_markdown(report, pack, db.get_session(s["id"]) or s, turns))
     for a in attempts:

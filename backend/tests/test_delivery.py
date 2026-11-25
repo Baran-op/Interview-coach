@@ -225,3 +225,48 @@ def test_face_moment_text_and_markdown():
     assert delivery.face_moment_text(m) == "Looked down 0:42–0:51 (9 s)"
     assert feedback._face_moments_md({"face": {"moments": [m]}}) == ["- Looked down 0:42–0:51 (9 s)", ""]
     assert feedback._face_moments_md(None) == [] and feedback._face_moments_md({"face": None}) == []
+
+
+def _w(text, a, b):
+    return {"w": text, "start_ms": a, "end_ms": b}
+
+
+def _spoken_turn():
+    # Two kept segments: 10-14 s and 30-33 s on the session clock, so the WAV is 7 s long.
+    words = [_w("one", 500, 900), _w("two", 2000, 2400), _w("three", 3500, 3900),
+             _w("four", 4200, 4600), _w("five", 6000, 6400)]
+    return {"segments": [{"start_ms": 10_000, "end_ms": 14_000}, {"start_ms": 30_000, "end_ms": 33_000}], "words": words}
+
+
+def test_words_at_maps_through_segments():
+    t = _spoken_turn()
+    assert delivery.words_at(t, 11_500, 12_500) == "two"
+    # 30.0-31.0 s on the session clock is 4.0-5.0 s of the WAV, after the 4 s gap was dropped.
+    assert delivery.words_at(t, 30_000, 31_000) == "four"
+    assert delivery.words_at(t, 13_000, 33_000) == "three four five"
+    assert delivery.words_at(t, 20_000, 25_000) is None  # inside the dropped gap
+
+
+def test_words_at_no_quote_without_segments_or_words():
+    t = _spoken_turn()
+    assert delivery.words_at({**t, "segments": None}, 0, 99_000) is None
+    assert delivery.words_at({**t, "segments": []}, 0, 99_000) is None
+    assert delivery.words_at({**t, "words": None}, 0, 99_000) is None
+    assert delivery.words_at({"text": "typed"}, 0, 99_000) is None
+
+
+def test_words_at_caps_with_ellipsis():
+    words = [_w(f"w{i}", i * 100, i * 100 + 80) for i in range(40)]
+    t = {"segments": [{"start_ms": 0, "end_ms": 4000}], "words": words}
+    q = delivery.words_at(t, 0, 4000)
+    assert q.endswith("…") and len(q.rstrip("…").split()) == 15
+    assert delivery.words_at(t, 0, 1500) == " ".join(f"w{i}" for i in range(15))  # exactly 15: no ellipsis
+
+
+def test_moment_quote_joins_turns_and_add_quotes():
+    a = {"segments": [{"start_ms": 0, "end_ms": 5000}], "words": [_w("hello", 100, 400), _w("there", 4000, 4500)]}
+    b = {"segments": [{"start_ms": 6000, "end_ms": 9000}], "words": [_w("again", 500, 900)]}
+    assert delivery.moment_quote([a, b], 3500, 7000) == "there again"
+    fd = {"face": {"moments": [{"kind": "down", "start_ms": 3500, "end_ms": 7000}, {"kind": "away", "start_ms": 20000, "end_ms": 26000}]}}
+    delivery.add_quotes(fd, [a, b])
+    assert fd["face"]["moments"][0]["quote"] == "there again" and "quote" not in fd["face"]["moments"][1]

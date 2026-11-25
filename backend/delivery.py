@@ -375,6 +375,59 @@ def face_moments(face: dict | None, baseline: dict | None) -> list[dict]:
     return sorted(out, key=lambda m: m["start_ms"])
 
 
+QUOTE_WORDS = 15
+
+
+def _words_in(turn: dict, start_ms: float, end_ms: float) -> list[str]:
+    """The words of one turn spoken between two session-clock times, found through the turn's segments.
+
+    The answer WAV is the kept speech segments joined, so a session time maps to a WAV offset by the
+    lengths of the segments before it. A word counts when its midpoint falls inside the span.
+    """
+    segs, words = turn.get("segments") or [], turn.get("words") or []
+    if not segs or not words:
+        return []
+    ranges, offset = [], 0
+    for s in segs:
+        a, b = max(start_ms, s["start_ms"]), min(end_ms, s["end_ms"])
+        if b > a:
+            lo = offset + a - s["start_ms"]
+            ranges.append((lo, lo + (b - a)))
+        offset += s["end_ms"] - s["start_ms"]
+    out = []
+    for w in words:
+        mid = (w["start_ms"] + w["end_ms"]) / 2
+        if any(lo <= mid < hi for lo, hi in ranges):
+            out.append(w["w"])
+    return out
+
+
+def _quote(words: list[str]) -> str | None:
+    if not words:
+        return None
+    return " ".join(words[:QUOTE_WORDS]) + ("…" if len(words) > QUOTE_WORDS else "")
+
+
+def words_at(turn: dict, start_ms: float, end_ms: float) -> str | None:
+    """What you were saying in a span of the session clock, about 15 words then an ellipsis. None when the
+    turn has no segments or no words (typed answers, older sessions) or nothing was said in the span."""
+    return _quote(_words_in(turn, start_ms, end_ms))
+
+
+def moment_quote(turns: list[dict], start_ms: float, end_ms: float) -> str | None:
+    """`words_at` across all of an answer's turns, capped once."""
+    return _quote([w for t in turns for w in _words_in(t, start_ms, end_ms)])
+
+
+def add_quotes(face_delivery: dict, turns: list[dict]) -> dict:
+    """Put a ``quote`` on each moment of a ``face_fields`` result (in place; returns it)."""
+    for m in (face_delivery.get("face") or {}).get("moments") or []:
+        q = moment_quote(turns, m["start_ms"], m["end_ms"])
+        if q:
+            m["quote"] = q
+    return face_delivery
+
+
 def face_moment_text(m: dict) -> str:
     """``Looked down 0:42-0:51 (9 s)``, or ``Still face 2:10-2:38 (28 s)`` (with an en dash)."""
     secs = max(0, round((m["end_ms"] - m["start_ms"]) / 1000))
@@ -398,6 +451,15 @@ def _turn_seconds(t: dict) -> float:
     if a is not None and b is not None and b > a:
         return (b - a) / 1000
     return len(t["text"].split()) / 2.5
+
+
+def answer_turns(answer: dict, answers: list[dict], turns: list[dict]) -> list[dict]:
+    """The candidate turns that make up one answer: after its question turn, before the next answer's."""
+    qt = answer.get("question_turn")
+    if not isinstance(qt, int):
+        return []
+    nxt = next((s for s in sorted(a["question_turn"] for a in answers if isinstance(a.get("question_turn"), int)) if s > qt), None)
+    return [t for t in turns if t["speaker"] == "candidate" and t["idx"] > qt and (nxt is None or t["idx"] < nxt)]
 
 
 def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voice_baseline: dict | None = None,
@@ -450,7 +512,7 @@ def answer_delivery(answers: list[dict], turns: list[dict], audio_dir=None, voic
             "target": list(target) if target else None,
             "flag": flag,
             **voice_fields(voice, voice_baseline),
-            **face_fields(combine_face([t.get("face") for t in mine]), face_baseline),
+            **add_quotes(face_fields(combine_face([t.get("face") for t in mine]), face_baseline), mine),
         }
 
 

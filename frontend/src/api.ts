@@ -1,3 +1,4 @@
+import type { SpeechSegment } from './audio/vad'
 import type { FaceStats } from './face/stats'
 export type InterviewType = 'behavioural' | 'technical' | 'mixed' | 'case' | 'roleplay'
 export type Stage = 'screen' | 'full' | 'final'
@@ -154,6 +155,8 @@ export interface FaceMoment {
   kind: 'down' | 'away' | 'still'
   start_ms: number
   end_ms: number
+  /** What you were saying (about 15 words); absent for typed answers and older sessions. */
+  quote?: string
 }
 
 export interface FaceStatsSummary {
@@ -418,10 +421,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(face ? { text, face } : { text }),
     }),
-  sendAudio: (sessionId: string, wav: Blob, face?: FaceStats | null) => {
+  sendAudio: (sessionId: string, wav: Blob, face?: FaceStats | null, segments?: SpeechSegment[]) => {
     const form = new FormData()
     form.append('audio', wav, 'answer.wav')
     if (face) form.append('face', JSON.stringify(face))
+    if (segments?.length) form.append('segments', JSON.stringify(segments))
     return streamEvents(`/sessions/${sessionId}/turn`, { body: form })
   },
   endSession: (sessionId: string, timeline: TurnTiming[] = [], score = true) =>

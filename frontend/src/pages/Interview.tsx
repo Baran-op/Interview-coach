@@ -3,7 +3,7 @@ import { api, type Expression, type Health, type InterviewEvent, type Pack, type
 import { InterviewerPlayer, type Speaker, type SpokenSentence } from '../audio/player'
 import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
 import { SessionRecorder, getRecordMode } from '../audio/recorder'
-import { TurnListener } from '../audio/vad'
+import { TurnListener, type SpeechSegment } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 import Dropdown from '../components/Dropdown'
 import { FaceTracker, faceModelAvailable, getFaceTracking } from '../face/FaceTracker'
@@ -355,7 +355,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
 
   // ---------------------------------------------------------- my turns -- //
 
-  const submitAudio = (audio: Float32Array, bySilence: boolean) => {
+  const submitAudio = (audio: Float32Array, bySilence: boolean, segments: SpeechSegment[]) => {
     const id = sessionRef.current
     if (!id) return
     const turnEndedAt = performance.now()
@@ -367,7 +367,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
     const end = Math.max(0, clockNow() - silenceMs)
     const answerSpan = { start: Math.min(speechStart.current ?? listenStart.current, end), end, listen: listenStart.current }
     const face = faceRef.current?.endSegment() ?? null
-    void runReply(api.sendAudio(id, encodeWav(audio), face), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
+    void runReply(api.sendAudio(id, encodeWav(audio), face, segments), { candidateMsg, turnEndedAt, silenceMs, answerSpan })
   }
 
   const submitText = async () => {
@@ -446,6 +446,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
               },
             },
             silenceRef.current,
+            clockNow,
           )
           try {
             await listener.init()

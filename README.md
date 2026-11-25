@@ -57,7 +57,7 @@ share it with other people.
    runtime to `frontend/public/mediapipe/`, so it works offline. Both folders are git-ignored. Without
    them the Setup toggle "Track eye contact and expression" is greyed out and everything else works.
    It needs the webcam in the recording (*Webcam + audio* or *Avatar and webcam side by side*). Video
-   frames never leave the browser and are never stored; only a few numbers per answer are (`turns.face_json`).
+   frames never leave the browser and are never stored; only a few numbers per answer are (`turns.face_json`). The listening step also stores the session-clock times of each speech segment kept for an answer (`turns.segments_json`), so moments can quote what you were saying.
    The browser console logs the tracker's ms per frame every 10 s.
 
 ## Run
@@ -219,7 +219,7 @@ their saved answer audio and stored face stats. It never calls Claude and can be
 Face flags (mostly looking down, low eye contact, still face) show in Review next to each answer's eye contact
 percentage and in the Markdown download. Looking down and low eye contact use fixed limits (30% and 60%); still
 face compares with your own usual expressiveness once 10 answers have it. Long look-aways and still stretches are
-listed under each answer with a play button, and shaded on the recording's timeline. Face data exists only for
+listed under each answer with a play button and the words you were saying at that point (typed answers and older sessions have no quote), and shaded on the recording's timeline. Face data exists only for
 sessions recorded with the camera tracking on; other sessions show no face line.
 
 Words missing from Kokoro's dictionary (often company names) are spelled out letter by
@@ -236,7 +236,7 @@ those words automatically.
 | POST | `/packs` | Create a pack |
 | GET | `/packs`, `/packs/{id}` | List or load packs |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
-| POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}`, plus an optional `face` (JSON string / key: per-answer face stats, validated and stored in `turns.face_json`) → streams the reply |
+| POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}`, plus optional `face` (JSON string / key: per-answer face stats, validated and stored in `turns.face_json`) and, with audio, `segments` (JSON list of `{start_ms, end_ms}` speech segments on the session clock, validated and stored in `turns.segments_json`) → streams the reply |
 | POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms,t_listen_ms?}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
 | POST | `/sessions/{id}/recording` | Multipart `recording` (.webm) |
 | GET | `/sessions/{id}/recording` | The recording (range requests supported for seeking; `?download=1` to save) |
