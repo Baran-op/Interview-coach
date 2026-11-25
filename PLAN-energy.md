@@ -2,8 +2,8 @@
 
 Today each answer's delivery stats cover what you said and how long you took: words, pace, fillers,
 hedges, numbers and pauses. Nothing measures how your voice sounds or what you look like on camera.
-This plan adds both, locally and without Claude requests: first the voice (H1-H2), then the face
-(H3-H5). **Build order** at the end is the checklist to tick off.
+This plan adds both, locally and without Claude requests: first the voice (H1-H3), then the face
+(H4-H7), including when in the recording each problem happened. **Build order** at the end is the checklist to tick off.
 
 Sizes are as in `PLAN.md`: **XS** a few lines, **S** one module, **M** a feature across backend and
 frontend, **L** a new page with its own data.
@@ -165,12 +165,27 @@ frames (at least 3 s) before the first answer.
 - `expressiveness`: the mean standard deviation of the expression shapes across the answer, times 100.
 - `face_found_pct` and `frames`. If the face was found in under half the frames, the stats are null.
 
+**When it happened.** The totals say something is off; the timing lets you watch it. The tracker
+also records:
+
+- `away_spans`: `[{start_ms, end_ms, kind}]` on the session clock (Interview's `clockNow()`, the same
+  clock as the turn ▶ markers in Review), so a span lines up with the recording.
+  - `kind: "down"`: off screen and below centre for **3 s or more**. This is the reading-notes signal.
+  - `kind: "away"`: off screen to the side or above for **5 s or more**. Brief glances up or sideways
+    while thinking are normal and good speakers do it too, so shorter ones are never flagged.
+    Flagging every glance would teach you to stare at the screen.
+  - Dips under 0.5 s are bridged so one look doesn't split into several. At most 20 spans per answer.
+- `expr_windows`: `{start_ms, values}`, the expressiveness of each 5 s window of the answer. The
+  backend compares them with your baseline to find long still stretches (2b), because the browser
+  doesn't know your baseline.
+
 **Storage**
 
 - Interview posts `face` (JSON) with each answer: a form field next to `audio`, or a key in the typed
   JSON body.
 - `turns.face_json TEXT` in `_EXTRA_COLUMNS`. `take_turn` validates it (known keys only, numbers
-  clamped to range, size capped) and stores it after `db.add_turn`.
+  clamped to range, spans inside the turn's time range, lists and size capped) and stores it after
+  `db.add_turn`.
 
 **Performance check.** The 8 GB M1 is also running Whisper, Kokoro and the avatar. Log the tracker's
 frame time. If it averages over 40 ms or the avatar visibly stutters, drop to 5 fps; if that's still
@@ -194,23 +209,64 @@ audio mode stores nothing and behaves as before, and the avatar runs as smoothly
 - `delivery_line()` and Review: e.g. `eye contact 58% · mostly looking down · still face`, with the
   same tooltip and highlighting as the voice flags. The Review "Delivery" section gets a session line.
 
+**Where it went wrong** (`delivery.face_moments`, pure, tested)
+
+- `delivery.face.moments`: the answer's `away_spans`, plus `still` stretches: 20 s or more of
+  consecutive `expr_windows` under half your usual expressiveness. A still face is a stretch across
+  a whole story, not a single moment, so it's only marked when it's long. With no baseline yet,
+  there are no still moments.
+- Review player: each moment is a shaded band on the recording's timeline, under the existing turn
+  markers, in the neutral highlight tone (not red). Hovering shows its label.
+- Under each answer: a list such as "Looked down 0:42–0:51 (9 s) ▶" or "Still face 2:10–2:38 ▶".
+  Clicking ▶ seeks the recording there, the way the turn markers already do (`seek()` in `Review.tsx`).
+- `to_markdown()` lists the moments with their times under each answer.
+- You need the webcam in the recording to watch yourself. In the `avatar` record mode the moments
+  are still listed, but the video shows the avatar; Review says so once, above the list.
+
 **Done when** a session recorded with the camera shows eye contact on every answer in Review and the
-Markdown download, and an answer you deliberately read from notes is flagged `looking_down`.
+Markdown download, and an answer where you deliberately read from notes for about 10 s is flagged
+`looking_down`, with a band at that point in the recording. Clicking it plays that moment, and a 2 s
+glance away elsewhere isn't marked.
 
 **Cost:** none. **Depends on:** 2a.
 
-### 2c. Face in Drill (S)
+### 2c. What you were saying at that moment (S-M)
+
+Each moment shows the words you were saying, e.g. "Looked down 0:42–0:51, while saying: *the go-live
+slipped by two weeks because…*". Patterns show up quickly this way, such as always looking down
+when you get to numbers or to the outcome.
+
+- `stt.transcribe` asks mlx-whisper for word timestamps (`word_timestamps=True`) and also returns the
+  words with their offsets in the WAV. Stored in `turns.words_json`. Measure the extra transcription
+  time on a 60 s answer; if it's over about 0.5 s, compute the words in the report step instead,
+  from the saved WAVs.
+- The turn audio isn't continuous: for a held turn the VAD drops long pauses, so a WAV offset isn't a
+  session time. `TurnListener` records the session-clock start and end of each speech segment it
+  keeps, and Interview posts them as `segments` with the answer. Stored in `turns.segments_json`.
+- `delivery.words_at(turn, start_ms, end_ms)` (pure, tested) maps the span through the segments to
+  WAV offsets and returns those words, capped at about 15 with "…". If a turn has no segments
+  (typed answers, older sessions), there's no quote.
+- Review and `to_markdown()` show the quote under each moment.
+
+**Done when** the moments in a new session show the words you were saying, checked against the
+recording for three moments, and a typed answer or an older session still renders without quotes.
+
+**Cost:** none. **Depends on:** 2b.
+
+### 2d. Face in Drill (S)
 
 - Drill opens the camera only when the Setup toggle is on and the model exists, with a small
   self-view so you can check framing.
 - The same `FaceTracker`: the question being read out is a listen segment, and your answer is an
   answer segment. `face` is posted with the attempt and added to the attempt's `delivery`.
 - The attempt history gets an eye-contact column next to pitch range.
+- Drill doesn't record video, so the moments are listed with their time into the answer (and the
+  quote, from 2c) but have no ▶.
 
 **Done when** three drill attempts of one question show eye contact and pitch range in the attempt
 history, and the camera is off whenever the toggle is off.
 
-**Cost:** none. **Depends on:** 2b.
+**Cost:** none. **Depends on:** 2b; 2c for quotes.
 
 ## 3. Trends over time (S, optional)
 
@@ -224,7 +280,9 @@ trailing-off share and median eye contact. Partial sessions are left out, as the
 - Sending audio, video frames or these stats to Claude. These items are local only. Giving the
   flags to the report prompt, so the top fixes can mention them, is worth revisiting after a few
   weeks of data.
-- Storing video frames or landmarks. Only the per-answer numbers are kept.
+- Storing video frames or landmarks. Only the per-answer numbers and moment times are kept.
+- Timeline moments for the voice flags (flat stretches, trailing off). The `segments` from 2c make
+  them possible later; they're left out for now to keep the first version small.
 
 ## Cost summary
 
@@ -243,9 +301,10 @@ dependency.
 - [ ] H2. 1b Run the calibration on real answers; record thresholds below
 - [ ] H3. 1c Voice baseline, flags, report, Drill, Review, and `scripts/backfill_delivery.py`
 - [ ] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json`
-- [ ] H5. 2b Face stats in the report and Review
-- [ ] H6. 2c Face stats in Drill
-- [ ] H7. 3 Delivery trends in History (optional)
+- [ ] H5. 2b Face stats in the report and Review, with timed moments on the recording
+- [ ] H6. 2c What you were saying at each moment (word timestamps, VAD segments)
+- [ ] H7. 2d Face stats in Drill
+- [ ] H8. 3 Delivery trends in History (optional)
 
 ## Calibration results
 
