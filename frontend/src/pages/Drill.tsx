@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, categoryLabel, criteriaHash, reportCriteria, FACE_FLAG_LABEL, FACE_MOMENT_LABEL, VOICE_FLAG_LABEL, faceTooltip, voiceTooltip, type FaceMoment, type DrillAttempt, type DrillQuestion, type Pack } from '../api'
 import { InterviewerPlayer, type Speaker } from '../audio/player'
 import { TurnListener, type SpeechSegment } from '../audio/vad'
 import { encodeWav } from '../audio/wav'
 import { Avatar, AvatarController, avatarAvailable } from '../avatar/Avatar'
 import { FaceTracker, faceModelAvailable, getFaceTracking } from '../face/FaceTracker'
+import { Chevron } from '../components/Dropdown'
+import { parseFrom } from '../voice/answers'
+import LastTime, { type LastInfo } from '../voice/LastTime'
+import TurnVoice from '../voice/TurnVoice'
 
 interface Current {
   key: string
@@ -43,9 +47,23 @@ function delta(d: number) {
 interface Props {
   packId: string
   initialQuestion: string | null
+  /** `<session>~<turn>~<section>` from a Review "Try again in Drill" link. */
+  from?: string | null
 }
 
-export default function Drill({ packId, initialQuestion }: Props) {
+/** "Pitch range 3.1 → 5.0 st (usual 5.4) · flat stretches 2 → 0": behaviour only, no verdict words. */
+function voiceComparison(old: LastInfo, now: DrillAttempt['result']): string | null {
+  const v = now?.delivery?.voice
+  if (old.pitchRange == null || v?.pitch_range_st == null) return null
+  const bits = [`Pitch range ${old.pitchRange.toFixed(1)} \u2192 ${v.pitch_range_st.toFixed(1)} st` + (old.usual != null ? ` (usual ${old.usual.toFixed(1)})` : '')]
+  if (old.sections != null && v.sections) bits.push(`flat stretches ${old.sections} \u2192 ${v.sections.length}`)
+  return bits.join(' \u00b7 ')
+}
+
+export default function Drill({ packId, initialQuestion, from = null }: Props) {
+  const fromRef = useMemo(() => parseFrom(from), [from])
+  const [fromActive, setFromActive] = useState(false)
+  const [last, setLast] = useState<LastInfo | null>(null)
   const [pack, setPack] = useState<Pack | null>(null)
   const [questions, setQuestions] = useState<DrillQuestion[]>([])
   const [labels, setLabels] = useState<Record<string, string>>({}) // the brief's category labels
@@ -114,6 +132,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
           const key = await questionKey(initialQuestion)
           const known = q.questions.find((x) => x.key === key)
           await select(known?.question ?? initialQuestion, known?.category ?? null, key)
+          if (!cancelled) setFromActive(true)
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
@@ -282,7 +301,10 @@ export default function Drill({ packId, initialQuestion }: Props) {
             <button
               key={q.key}
               className={`drill-q ${current?.key === q.key ? 'on' : ''}`}
-              onClick={() => void select(q.question, q.category, q.key)}
+              onClick={() => {
+                setFromActive(false)
+                void select(q.question, q.category, q.key)
+              }}
             >
               <span>{q.question}</span>
               <span className="drill-chips">
@@ -300,6 +322,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
             onSubmit={(e) => {
               e.preventDefault()
               if (custom.trim()) {
+                setFromActive(false)
                 void select(custom.trim(), null)
                 setCustom('')
               }
@@ -352,6 +375,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
                     </button>
                   ))}
               </div>
+              {fromActive && fromRef && <LastTime from={fromRef} onInfo={setLast} />}
               {phase === 'listening' && <p className="muted small">Listening. Pauses never end it; press Done when finished.</p>}
               {notice && <div className="banner">{notice}</div>}
               <form
@@ -385,6 +409,7 @@ export default function Drill({ packId, initialQuestion }: Props) {
                     )}
                   </h3>
                   <LengthLine d={result.attempt.result.delivery} />
+                  {fromActive && last && voiceComparison(last, result.attempt.result) && <p className="small">{voiceComparison(last, result.attempt.result)}</p>}
                   <div className="bars">
                     {reportCriteria(result.attempt.result).map((c) => (
                       <Bar key={c.key} label={c.name} value={result.attempt.result!.scores[c.key] ?? 0} />
@@ -400,6 +425,9 @@ export default function Drill({ packId, initialQuestion }: Props) {
                         </span>
                       ))}
                     </p>
+                  )}
+                  {result.attempt.has_audio && (
+                    <DrillVoice key={result.attempt.id} packId={packId} attemptId={result.attempt.id} from={fromActive ? fromRef : null} />
                   )}
                   {result.attempt.result.delivery?.face && (
                     <div className="small" title={faceTooltip(result.attempt.result.delivery) || undefined}>
@@ -520,5 +548,40 @@ function Bar({ label, value }: { label: string; value: number }) {
       </span>
       <span>{value}</span>
     </>
+  )
+}
+
+/** The attempt's pitch graph (and, with a `from` link, the interview answer on the same scale). Loads only when opened. */
+function DrillVoice({ packId, attemptId, from }: { packId: string; attemptId: string; from: ReturnType<typeof parseFrom> }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details className="disclosure plain voice-drill" onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>
+        <h3>Your voice</h3>
+        <span className="summary-meta muted small">graph and playback</span>
+        <Chevron />
+      </summary>
+      {open && (
+        <>
+          <TurnVoice
+            voiceUrl={api.drillVoiceUrl(packId, attemptId)}
+            audioUrl={api.drillAudioUrl(packId, attemptId)}
+            peerVoiceUrl={from ? api.turnVoiceUrl(from.session, from.turn) : undefined}
+            title="This attempt"
+            unavailableText="The voice graph isn't available for this attempt."
+            noAdviceNote={null}
+          />
+          {from && (
+            <TurnVoice
+              voiceUrl={api.turnVoiceUrl(from.session, from.turn)}
+              audioUrl={api.turnAudioUrl(from.session, from.turn)}
+              peerVoiceUrl={api.drillVoiceUrl(packId, attemptId)}
+              title="In the interview"
+              noAdviceNote={null}
+            />
+          )}
+        </>
+      )}
+    </details>
   )
 }

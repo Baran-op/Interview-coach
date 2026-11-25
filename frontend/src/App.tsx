@@ -11,20 +11,27 @@ import Brief from './pages/Brief'
 type Screen =
   | { name: 'setup'; editPackId?: string }
   | { name: 'interview'; pack: Pack }
-  | { name: 'review'; sessionId: string }
+  | { name: 'review'; sessionId: string; tab: 'feedback' | 'voice'; q: number | null }
   | { name: 'history' }
-  | { name: 'drill'; packId: string; q: string | null }
+  | { name: 'drill'; packId: string; q: string | null; from: string | null }
   | { name: 'prep'; packId: string }
   | { name: 'brief'; packId: string; generate: boolean }
 
-// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>,
+// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>[&from=<session>~<turn>~<section>], #/review/<session id>[?tab=voice&q=<answer index>],
 // #/prep/<pack id>, #/brief/<pack id>[?generate=1].
 function fromHash(current: Screen): Screen {
   const hash = window.location.hash
-  const review = hash.match(/^#\/review\/([\w-]+)/)
-  if (review) return { name: 'review', sessionId: review[1] }
+  const review = hash.match(/^#\/review\/([\w-]+)(?:\?(.*))?/)
+  if (review) {
+    const qs = new URLSearchParams(review[2] ?? '')
+    const q = qs.get('q')
+    return { name: 'review', sessionId: review[1], tab: qs.get('tab') === 'voice' ? 'voice' : 'feedback', q: q != null && /^\d+$/.test(q) ? Number(q) : null }
+  }
   const drill = hash.match(/^#\/drill\/([\w-]+)(?:\?(.*))?/)
-  if (drill) return { name: 'drill', packId: drill[1], q: new URLSearchParams(drill[2] ?? '').get('q') }
+  if (drill) {
+    const qs = new URLSearchParams(drill[2] ?? '')
+    return { name: 'drill', packId: drill[1], q: qs.get('q'), from: qs.get('from') }
+  }
   const prep = hash.match(/^#\/prep\/([\w-]+)/)
   if (prep) return { name: 'prep', packId: prep[1] }
   const brief = hash.match(/^#\/brief\/([\w-]+)(?:\?(.*))?/)
@@ -97,7 +104,7 @@ export default function App() {
           />
         )}
         {screen.name === 'history' && <History onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
-        {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} />}
+        {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} from={screen.from} />}
         {screen.name === 'prep' && <Prep key={screen.packId} packId={screen.packId} />}
         {screen.name === 'brief' && <Brief
             key={screen.packId}
@@ -109,13 +116,15 @@ export default function App() {
           <Interview
             pack={screen.pack}
             onExit={() => go({ name: 'setup' }, '#/')}
-            onReview={(sessionId) => go({ name: 'review', sessionId }, `#/review/${sessionId}`)}
+            onReview={(sessionId) => go({ name: 'review', sessionId, tab: 'feedback', q: null }, `#/review/${sessionId}`)}
           />
         )}
         {screen.name === 'review' && (
           <Review
             key={screen.sessionId}
             sessionId={screen.sessionId}
+            tab={screen.tab}
+            q={screen.q}
             onStart={(pack) => go({ name: 'interview', pack }, '#/interview')}
           />
         )}
