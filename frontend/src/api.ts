@@ -186,6 +186,47 @@ export interface PackHistory {
   last_used: number
 }
 
+export type DrillSource = 'starter' | 'report' | 'prep' | 'custom'
+
+export interface DrillQuestion {
+  key: string
+  question: string
+  category: string | null
+  source: DrillSource
+  attempts: number
+  latest: number | null
+  best: number | null
+}
+
+export interface DrillResult {
+  scores: Record<Criterion, number>
+  average: number
+  tips: string[]
+  improved: string[]
+  better_answer: string
+  delivery?: Record<string, unknown> & { seconds?: number | null }
+}
+
+export interface DrillAttempt {
+  id: string
+  pack_id: string
+  question_key: string
+  question: string
+  category: string | null
+  answer_text: string
+  seconds: number | null
+  has_audio: boolean
+  result: DrillResult | null
+  created_at: number
+}
+
+export interface TtsSentence {
+  text: string
+  audio_wav_base64: string | null
+  word_timings: WordTiming[]
+  expressions: Expression[]
+}
+
 export interface ModelState {
   model: string
   status: 'not loaded' | 'loading' | 'loaded' | 'unavailable'
@@ -293,6 +334,32 @@ export const api = {
   getReport: (sessionId: string) => request<ReportResponse>(`/sessions/${sessionId}/report`),
   regenerateReport: (sessionId: string) =>
     request<{ status: ReportStatus }>(`/sessions/${sessionId}/report`, { method: 'POST' }),
+  drillQuestions: (packId: string) => request<{ questions: DrillQuestion[] }>(`/packs/${packId}/drill`),
+  drillAttempts: (packId: string, key: string) =>
+    request<{ attempts: DrillAttempt[] }>(`/packs/${packId}/drill/attempts?key=${encodeURIComponent(key)}`),
+  /** One Claude request. Typed answer (`text`) or a spoken one (`wav` plus its length in seconds). */
+  drillAttempt: async (
+    packId: string,
+    a: { question: string; category: string | null; text?: string; wav?: Blob; seconds?: number },
+  ) => {
+    const path = `/packs/${packId}/drill/attempts`
+    if (a.wav) {
+      const form = new FormData()
+      form.append('audio', a.wav, 'answer.wav')
+      form.append('question', a.question)
+      form.append('category', a.category ?? '')
+      if (a.seconds) form.append('seconds', String(a.seconds))
+      const res = await fetch(`/api${path}`, { method: 'POST', body: form })
+      if (!res.ok) throw await errorFrom(res)
+      return (await res.json()) as { attempt: DrillAttempt; previous: DrillAttempt | null }
+    }
+    return request<{ attempt: DrillAttempt; previous: DrillAttempt | null }>(path, {
+      method: 'POST',
+      body: JSON.stringify({ question: a.question, category: a.category ?? '', text: a.text, seconds: a.seconds }),
+    })
+  },
+  tts: (text: string, voice?: string) =>
+    request<{ sentences: TtsSentence[] }>('/tts', { method: 'POST', body: JSON.stringify({ text, voice }) }),
   recordingUrl: (sessionId: string, download = false) =>
     `/api/sessions/${sessionId}/recording${download ? '?download=1' : ''}`,
   reportMdUrl: (sessionId: string) => `/api/sessions/${sessionId}/report.md`,

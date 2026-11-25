@@ -33,7 +33,7 @@ item's checkbox in `PLAN.md` in the same commit that builds it.
 - `backend/` Python 3.11, FastAPI. `main.py` routes, `brain.py` Claude Agent SDK interviewer,
   `feedback.py` report generation, `categories.py` question categories (fallback from question text, also applied to older reports), `claude_json.py` schema-checked JSON helper (`ask_json`; falls back to parsing the reply text), `drill.py` drill mode (question list, one-Claude-call scoring with `prompts/drill.txt`, `question_key`), `delivery.py` per-answer delivery stats (`text_stats`, `audio_stats` from the saved answer WAVs, `answer_delivery` adds `delivery` to each report answer, `TARGET_SECONDS`), `stt.py` mlx-whisper, `tts.py` Kokoro, `db.py` SQLite, `gpu.py`,
   `prompts/` (`interviewer.txt`, `feedback.txt`).
-- `frontend/` Vite + React + TypeScript. `src/pages`, `src/audio` (Silero VAD, recording), `src/avatar`
+- `frontend/` Vite + React + TypeScript. `src/pages` (incl. `Drill.tsx`, route `#/drill/<pack id>?q=<question>`), `src/audio` (Silero VAD, recording), `src/avatar`
   (three.js + TalkingHead behind `AvatarController.say()`), `src/api.ts`.
 - `scripts/` hand-run tools. `python -m scripts.rescore <session_id> --n 3` re-runs the report prompt on a stored transcript (not saved, spends n Claude requests) and prints the score spread; `feedback.txt` has 1/3/5 anchors per criterion.
 - `data/` SQLite db, recordings and per-answer WAVs (`data/answers/<session>/<turn>.wav`) and drill answers (`data/answers/drill/<attempt>.wav`), git-ignored.

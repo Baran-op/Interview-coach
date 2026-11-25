@@ -289,6 +289,7 @@ export default function Setup({ onStart, editPackId }: Props) {
             </div>
             <div className="pack-actions">
               <button type="button" onClick={() => onStart(p)}>Start</button>
+              <a className="button-link" href={`#/drill/${p.id}`}>Drill</a>
               <button type="button" className="ghost" onClick={() => editPack(p)}>
                 Edit
               </button>

@@ -144,6 +144,9 @@ export default function History({ onStart }: Props) {
                 <button className="primary" onClick={() => onStart(pack)}>
                   Run again
                 </button>
+                <a className="button-link" href={`#/drill/${pack.id}`}>
+                  Drill
+                </a>
                 <a className="button-link" href={`#/edit/${pack.id}`}>
                   Edit
                 </a>

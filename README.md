@@ -171,6 +171,14 @@ minute.
   sessions. Deleting also removes the recordings.
 - The Review page compares each report with your **previous attempt** at the same pack
   (overall score, each criterion, filler words; partial sessions are skipped), and has **Run this pack again**.
+- **Drill** (`#/drill/<pack id>?q=<question>`): practise one question at a time. Open it with the
+  **Drill** button in Setup (saved packs) or History, or **Practise this question** under an answer
+  in Review. The left list has starter questions, weak questions from your reports (marked "weak")
+  and your own, each with best and latest score chips. Hear the question, then answer by voice
+  (Done-only: pauses never end it, press Done) or typed. **Each attempt uses one Claude request**
+  (the page says so). The result shows score bars, tips, "Better than last time" (from the second
+  attempt) and a collapsed "Show a stronger answer", which appears only after you have attempted.
+  The attempt list shows each average and its change since the previous attempt.
 - The Markdown report download ends with the full, timestamped transcript.
 
 ### Tuning

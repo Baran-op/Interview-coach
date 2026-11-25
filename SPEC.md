@@ -171,7 +171,7 @@ interview-coach/
     requirements.txt
   frontend/
     src/
-      pages/Setup.tsx, Interview.tsx, Review.tsx, History.tsx
+      pages/Setup.tsx, Interview.tsx, Review.tsx, History.tsx, Drill.tsx
       avatar/Avatar.tsx      # three.js + TalkingHead, say()
       audio/vad.ts, recorder.ts
       api.ts

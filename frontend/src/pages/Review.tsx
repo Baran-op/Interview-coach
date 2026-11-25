@@ -336,6 +336,9 @@ export default function Review({ sessionId, onStart }: Props) {
                       ))}
                     </ul>
                   )}
+                  <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
+                    Practise this question
+                  </a>
                   {a.better_answer && (
                     <details className="better">
                       <summary>A stronger answer</summary>

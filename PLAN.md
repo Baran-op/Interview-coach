@@ -461,7 +461,7 @@ One commit per line. If a real interview is close, pull 6d and 6c forward: they'
 
 - [x] D1. 5 Text stats (`delivery.text_stats`)
 - [x] D2. 1 Drill backend (`attempts` table, routes, `drill.txt`, `/tts`)
-- [ ] D3. 1 Drill page and entry points from Review, Setup and History
+- [x] D3. 1 Drill page and entry points from Review, Setup and History
 
 **Phase E: transcripts and delivery**
 

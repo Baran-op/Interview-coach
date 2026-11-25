@@ -231,3 +231,17 @@ input, select, textarea { max-width: 100%; }
 .out-of-target { color: var(--danger); font-weight: 600; }
 .type-table { margin-top: 12px; }
 .type-table h3 { font-size: 0.95rem; margin: 0 0 4px; }
+
+/* Drill mode */
+.drill-body { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 2fr); gap: 20px; align-items: start; }
+.drill-list { display: flex; flex-direction: column; gap: 6px; }
+.drill-q { text-align: left; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); background: transparent; }
+.drill-q.on { border-color: var(--accent); }
+.drill-chips .chip { margin-left: 0; margin-right: 6px; }
+.drill-custom { display: flex; gap: 6px; margin-top: 8px; }
+.drill-custom input { flex: 1; min-width: 0; }
+.drill-main { display: flex; flex-direction: column; gap: 12px; }
+.drill-main textarea { width: 100%; box-sizing: border-box; }
+.drill-history table { border-collapse: collapse; width: 100%; }
+.drill-history td { padding: 3px 8px 3px 0; }
+@media (max-width: 800px) { .drill-body { grid-template-columns: 1fr; } }
