@@ -90,6 +90,7 @@ def _system_prompt(pack: dict) -> str:
         "difficulty": opts.get("difficulty") or "medium",
         "jd": pack.get("jd") or "(not provided)",
         "profile": pack.get("profile") or "(not provided)",
+        "company_notes": pack.get("company_notes") or "(not provided)",
     }
     text = (PROMPTS_DIR / "feedback.txt").read_text(encoding="utf-8")
     for k, v in values.items():
