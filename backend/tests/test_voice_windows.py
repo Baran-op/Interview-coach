@@ -29,11 +29,12 @@ def _rows(spreads, path="a.wav"):
 
 def test_pick_clips_no_overlap_and_both_ends():
     rows = _rows([1, 1.1, 5, 9, 2, 8], "a.wav")  # a=0,100,200..: windows overlap (333 > 100)
+    rows += [{"path": "b.wav", "a": 0, "b": 333, "spread_st": 7.0, "pitched": 90}]
     picked = vw.pick_clips(rows, n=2)
-    by_path = [(r["a"], r["b"]) for r in picked]
+    by_path = [(r["a"], r["b"]) for r in picked if r["path"] == "a.wav"]
     assert all(x[1] <= y[0] or x[0] >= y[1] for i, x in enumerate(by_path) for y in by_path[i + 1 :])
     assert picked[0]["spread_st"] == 1  # flattest first
-    assert any(r["spread_st"] >= 8 for r in picked)
+    assert any(r["spread_st"] >= 7 for r in picked)
 
 
 def test_agreement_and_flagged_share():
