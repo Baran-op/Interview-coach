@@ -540,7 +540,7 @@ No new dependencies. No new local models.
 - [x] I1. Materials: table, multi-file upload and paste, the size cap, legacy packs shown as three
       synthetic materials (no data rewrite), `PackIn` without a required `jd`, Setup's materials list,
       research result as a material, Whisper hints from all materials, default-mode slot mapping by kind.
-- [ ] I2. Brief backend: `brief.py`, `prompts/brief.txt`, schema, `clean_brief`, `source_hash`,
+- [x] I2. Brief backend: `brief.py`, `prompts/brief.txt`, schema, `clean_brief`, `source_hash`,
       `criteria_hash`, `default_brief`, `briefs` table, GET/POST/PUT/DELETE `/packs/{id}/brief`,
       `BRIEF_MODEL`. Tests for cleaning, hashing and the default brief.
 - [ ] I3. Brief page: sections, assumptions to confirm (answers fed to Regenerate), stale notice,

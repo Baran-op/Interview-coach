@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, delivery, drill, feedback, gpu, materials, prep, research, stt, tts
+from . import brief, db, delivery, drill, feedback, gpu, materials, prep, research, stt, tts
 from .categories import resolve_category
 from .face import clean_face
 from .segments import clean_segments
@@ -222,8 +222,11 @@ def _pack_data(pack: PackIn) -> dict:
 
 
 def _pack_out(pack: dict) -> dict:
-    """A pack for the API: its materials (synthetic ones flagged for a legacy pack)."""
-    return {**pack, "materials": db.pack_materials(pack)}
+    """A pack for the API: its materials (synthetic ones flagged for a legacy pack) and `brief_meta`."""
+    mats = db.pack_materials(pack)
+    record = db.get_brief(pack["id"])
+    stale = bool(record) and record["source_hash"] != brief.source_hash(mats)
+    return {**pack, "materials": mats, "brief_meta": brief.meta(record["brief"] if record else None, stale)}
 
 
 class SessionIn(BaseModel):
@@ -498,6 +501,83 @@ async def write_prep(pack_id: str):
     except prep.PrepError as exc:
         raise HTTPException(502, str(exc))
     return _prep_out(pack, db.save_prep(pack_id, prep.source_hash(pack), sheet))
+
+
+class BriefGenerateIn(BaseModel):
+    # On a pack with scored sessions, also replace its criteria and categories (History starts fresh).
+    replace_criteria: bool = False
+
+
+class BriefSaveIn(BaseModel):
+    brief: dict
+    # Confirms that changing the criteria or categories of a scored pack starts History comparisons fresh.
+    fresh_start: bool = False
+
+
+def _brief_state(pack: dict) -> dict:
+    """GET /packs/{id}/brief: the saved brief, or the default one (`is_default`)."""
+    record = db.get_brief(pack["id"])
+    frozen = db.frozen_rubric(pack["id"]) is not None
+    base = {"frozen": frozen, "scored_sessions": db.scored_sessions(pack["id"]) if frozen else 0}
+    if not record:
+        return {**base, "brief": brief.default_brief(pack), "is_default": True, "stale": False,
+                "origin": "standard", "updated_at": None}
+    return {**base, "brief": record["brief"], "is_default": False,
+            "stale": record["source_hash"] != brief.source_hash(db.pack_materials(pack)),
+            "origin": record["origin"], "updated_at": record["updated_at"]}
+
+
+def _pack_or_404(pack_id: str) -> dict:
+    pack = db.get_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Pack not found")
+    return pack
+
+
+@app.get("/packs/{pack_id}/brief")
+async def get_brief(pack_id: str):
+    return _brief_state(_pack_or_404(pack_id))
+
+
+@app.post("/packs/{pack_id}/brief")
+async def generate_brief(pack_id: str, body: BriefGenerateIn | None = None):
+    """Write (or rewrite) the interview brief from the pack's materials. One Claude request."""
+    pack = _pack_or_404(pack_id)
+    mats = db.pack_materials(pack)
+    if not materials.has_text(pack):
+        raise HTTPException(422, "Add some materials to the pack first")
+    frozen = None if (body and body.replace_criteria) else db.frozen_rubric(pack_id)
+    previous = (db.get_brief(pack_id) or {}).get("brief")
+    try:
+        new = await brief.write(pack, mats, previous, frozen)
+    except brief.BriefError as exc:
+        raise HTTPException(502, str(exc))
+    db.save_brief(pack_id, new, brief.source_hash(mats), "generated")
+    return _brief_state(pack)
+
+
+@app.put("/packs/{pack_id}/brief")
+async def save_brief(pack_id: str, body: BriefSaveIn):
+    """Save your edits to the brief (no Claude request). 409 when it would change a frozen rubric."""
+    pack = _pack_or_404(pack_id)
+    new = brief.clean_brief(body.brief)
+    frozen = db.frozen_rubric(pack_id)
+    if frozen and not body.fresh_start and brief.rubric_hash(brief.rubric_of(new)) != brief.rubric_hash(frozen):
+        n = db.scored_sessions(pack_id)
+        raise HTTPException(409, f"This pack has {n} scored session{'s' if n != 1 else ''}. Changing criteria or "
+                                 "categories starts History comparisons fresh.")
+    record = db.get_brief(pack_id)
+    source = record["source_hash"] if record else brief.source_hash(db.pack_materials(pack))
+    db.save_brief(pack_id, new, source, "edited")
+    return _brief_state(pack)
+
+
+@app.delete("/packs/{pack_id}/brief")
+async def delete_brief(pack_id: str):
+    """Go back to the standard interview (the default brief)."""
+    pack = _pack_or_404(pack_id)
+    db.delete_brief(pack_id)
+    return _brief_state(pack)
 
 
 @app.get("/packs/{pack_id}/drill")

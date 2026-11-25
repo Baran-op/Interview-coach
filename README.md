@@ -221,6 +221,7 @@ Optional `.env` settings:
 | `RESEARCH_MODEL` | your plan's default | Model for "Draft from the web" |
 | `IDLE_TIMEOUT_MIN` | `30` | Interviews idle this long are ended and scored automatically (`0` disables) |
 | `FEEDBACK_MODEL` | same as the interviewer | Model for the feedback report |
+| `BRIEF_MODEL` | `FEEDBACK_MODEL`, then the interviewer's | Model for writing the interview brief |
 
 To check how steady the report's scores are, run `python -m scripts.rescore <session_id> --n 3`
 (from the repo root, venv active). It re-runs the report on a stored transcript without saving
@@ -250,7 +251,7 @@ those words automatically.
 | GET | `/voices` | Kokoro voices offered in Setup |
 | POST | `/extract-text` | Multipart `files` (several; `file` also works): `.pdf`, `.txt`, `.md`, max 10 MB each and 30 MB per batch. Returns `[{name, chars, text} or {name, error}]`, one per file (no OCR) |
 | POST | `/packs` | Create a pack: `{title, role, company, materials: [{name, kind, source, text}], options}` (`kind` job/candidate/organisation/format/other, `source` paste/pdf/text_file/research). An old client may send `jd`/`profile`/`company_notes` instead. 422 without any text, 413 over 150,000 characters |
-| GET | `/packs`, `/packs/{id}` | List or load packs. `/packs/{id}` adds `materials` (a pack saved before materials existed shows its old fields as up to three `synthetic: true` materials) |
+| GET | `/packs`, `/packs/{id}` | List or load packs. `/packs/{id}` adds `materials` (a pack saved before materials existed shows its old fields as up to three `synthetic: true` materials) and `brief_meta` (`{exists, kind, total_minutes, stations: [{name, minutes}], stale, to_confirm}`) |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
 | POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}`, plus optional `face` (JSON string / key: per-answer face stats, validated and stored in `turns.face_json`) and, with audio, `segments` (JSON list of `{start_ms, end_ms}` speech segments on the session clock, validated and stored in `turns.segments_json`) → streams the reply |
 | POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms,t_listen_ms?}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
@@ -262,6 +263,10 @@ those words automatically.
 | GET | `/sessions`, `/sessions/{id}` | Recent sessions; one session with its pack, turns and report status |
 | DELETE | `/sessions/{id}` | Delete a session with its transcript, report and recording |
 | PUT, DELETE | `/packs/{id}` | Edit a pack (same body as POST; `materials` replaces the pack's materials and leaves the old text columns untouched); delete it with all its sessions, materials and recordings |
+| GET | `/packs/{id}/brief` | The interview brief: `{brief, is_default, stale, frozen, scored_sessions, origin, updated_at}`. With none saved, the default brief (today's standard interview) with `is_default: true`. `stale`: the materials changed since it was generated; `frozen`: the pack has scored sessions, so its criteria and categories are locked |
+| POST | `/packs/{id}/brief` | Write or rewrite the brief from the materials (one Claude request, no tools). Body `{replace_criteria?: bool}`; on a frozen pack the criteria and categories are kept unless it is true. Your answers to the previous brief's questions are sent along |
+| PUT | `/packs/{id}/brief` | Save your edits (no Claude request). Body `{brief, fresh_start?: bool}`; 409 when the criteria or categories of a frozen pack change without `fresh_start: true` |
+| DELETE | `/packs/{id}/brief` | Back to the standard interview (the default brief) |
 | GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |

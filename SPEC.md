@@ -148,7 +148,8 @@ The backend strips tags from the text before TTS and returns them with the chara
 ```
 packs(id, title, role, company, jd, profile, company_notes, options_json, created_at)   -- jd/profile/company_notes: legacy packs only
 materials(id, pack_id, position, name, kind, source, text, created_at)
-sessions(id, pack_id, started_at, ended_at, recording_path, overall_score)
+briefs(pack_id, brief_json, source_hash, criteria_hash, origin, created_at, updated_at)
+sessions(id, pack_id, started_at, ended_at, recording_path, overall_score, brief_json)
 turns(id, session_id, idx, speaker, text, expressions_json, t_start_ms, t_end_ms, t_listen_ms, face_json, segments_json, words_json)
 reports(session_id, report_json, report_md)
 attempts(id, pack_id, question_key, question, category, answer_text, seconds, audio_path, result_json, created_at)

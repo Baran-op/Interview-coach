@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import brief as brief_mod
 from . import materials as mat
 from .categories import resolve_category
 
@@ -80,6 +81,15 @@ CREATE TABLE IF NOT EXISTS materials (
     text TEXT NOT NULL,          -- only the extracted text, never the uploaded file
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS briefs (
+    pack_id TEXT PRIMARY KEY REFERENCES packs(id),
+    brief_json TEXT NOT NULL,
+    source_hash TEXT NOT NULL,     -- materials hash when last generated
+    criteria_hash TEXT NOT NULL,
+    origin TEXT NOT NULL,          -- generated | edited
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS materials_by_pack ON materials (pack_id, position);
 CREATE INDEX IF NOT EXISTS attempts_by_question ON attempts (pack_id, question_key, created_at);
 """
@@ -103,6 +113,9 @@ _EXTRA_COLUMNS = {
         "status": "TEXT",          # 'pending' | 'ready' | 'error'
         "error": "TEXT",
         "created_at": "INTEGER",
+    },
+    "sessions": {
+        "brief_json": "TEXT",      # the brief the session ran with (null: the default brief)
     },
     "turns": {
         "t_listen_ms": "INTEGER",  # when the mic opened for this answer
@@ -399,6 +412,7 @@ def delete_pack(pack_id: str) -> list[str]:
         conn.execute("DELETE FROM attempts WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM prep WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM materials WHERE pack_id = ?", (pack_id,))
+        conn.execute("DELETE FROM briefs WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
     return paths
 
@@ -422,6 +436,58 @@ def save_prep(pack_id: str, source_hash: str, sheet: dict) -> dict:
             (pack_id, source_hash, json.dumps(sheet), _now_ms()),
         )
     return get_prep(pack_id)
+
+
+# ---------------------------------------------------------------- briefs --- #
+
+def get_brief(pack_id: str) -> dict | None:
+    """The pack's saved brief: {brief, source_hash, criteria_hash, origin, created_at, updated_at}, or None."""
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM briefs WHERE pack_id = ?", (pack_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["brief"] = json.loads(d.pop("brief_json"))
+    return d
+
+
+def save_brief(pack_id: str, brief: dict, source_hash: str, origin: str) -> dict:
+    now = _now_ms()
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO briefs (pack_id, brief_json, source_hash, criteria_hash, origin, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id) DO UPDATE SET brief_json = excluded.brief_json,"
+            " source_hash = excluded.source_hash, criteria_hash = excluded.criteria_hash, origin = excluded.origin,"
+            " updated_at = excluded.updated_at",
+            (pack_id, json.dumps(brief), source_hash, brief_mod.criteria_hash(brief["criteria"]), origin, now, now),
+        )
+    return get_brief(pack_id)
+
+
+def delete_brief(pack_id: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM briefs WHERE pack_id = ?", (pack_id,))
+
+
+def scored_sessions(pack_id: str) -> int:
+    with connect() as conn:
+        (n,) = conn.execute(
+            "SELECT COUNT(*) FROM sessions s JOIN reports r ON r.session_id = s.id "
+            "WHERE s.pack_id = ? AND r.status = 'ready'", (pack_id,)).fetchone()
+    return n
+
+
+def frozen_rubric(pack_id: str) -> dict | None:
+    """The rubric scoring is frozen to, once the pack has a ready report: the one the latest scored
+    session ran with (its brief snapshot), or the default rubric. None while nothing is scored."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT s.brief_json FROM sessions s JOIN reports r ON r.session_id = s.id "
+            "WHERE s.pack_id = ? AND r.status = 'ready' ORDER BY s.started_at DESC LIMIT 1", (pack_id,)).fetchone()
+    if not row:
+        return None
+    snap = json.loads(row["brief_json"]) if row["brief_json"] else brief_mod.default_brief()
+    return brief_mod.rubric_of(snap)
 
 
 # -------------------------------------------------------------- attempts --- #
