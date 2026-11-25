@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import db, delivery, drill, feedback, gpu, prep, research, stt, tts
+from . import db, delivery, drill, feedback, gpu, materials, prep, research, stt, tts
 from .categories import resolve_category
 from .face import clean_face
 from .segments import clean_segments
@@ -184,14 +184,46 @@ class PackOptions(BaseModel):
     voice: str = tts.DEFAULT_VOICE
 
 
+class MaterialIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=materials.MAX_NAME_CHARS)
+    kind: Literal["job", "candidate", "organisation", "format", "other"]
+    source: Literal["paste", "pdf", "text_file", "research"] = "paste"
+    text: str = Field(..., min_length=1)
+
+
 class PackIn(BaseModel):
     title: str = Field(..., min_length=1)
     role: str = ""
     company: str = ""
-    jd: str = Field(..., min_length=1)
+    jd: str = ""
     profile: str = ""
     company_notes: str = ""
+    # None: an old client, the three fields above are used as before. A list replaces the materials.
+    materials: list[MaterialIn] | None = None
     options: PackOptions = PackOptions()
+
+
+def _pack_data(pack: PackIn) -> dict:
+    """Validated pack data for db.create_pack / update_pack: needs some text, within the size cap."""
+    data = pack.model_dump()
+    if data["materials"] is not None:
+        data["materials"] = materials.clean(data["materials"])
+        total = materials.total_chars(data["materials"])
+        if not data["materials"]:
+            raise HTTPException(422, "Add at least one material with text (a job description, a CV, notes...)")
+    else:
+        total = sum(len(data[k] or "") for k in ("jd", "profile", "company_notes"))
+        if not data["jd"].strip():
+            raise HTTPException(422, "Add at least one material with text, or a job description")
+    if total > materials.MAX_PACK_CHARS:
+        raise HTTPException(413, f"The materials are {total:,} characters; the limit is "
+                                 f"{materials.MAX_PACK_CHARS:,} per pack. Remove or shorten some.")
+    return data
+
+
+def _pack_out(pack: dict) -> dict:
+    """A pack for the API: its materials (synthetic ones flagged for a legacy pack)."""
+    return {**pack, "materials": db.pack_materials(pack)}
 
 
 class SessionIn(BaseModel):
@@ -341,6 +373,7 @@ async def voices():
 
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_BYTES = 30 * 1024 * 1024  # per upload batch
 
 
 def _pdf_text(data: bytes) -> str:
@@ -355,24 +388,47 @@ def _pdf_text(data: bytes) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(p for p in pages if p)).strip()
 
 
-@app.post("/extract-text")
-async def extract_text(file: UploadFile):
-    """Text of an uploaded PDF, to fill the job description / CV fields."""
-    data = await file.read(MAX_PDF_BYTES + 1)
+async def _file_text(upload: UploadFile) -> dict:
+    """{name, chars, text} or {name, error} for one uploaded .pdf / .txt / .md file."""
+    name = upload.filename or "file"
+    data = await upload.read(MAX_PDF_BYTES + 1)
     if len(data) > MAX_PDF_BYTES:
-        raise HTTPException(413, "The PDF is larger than 10 MB")
-    try:
-        text = await asyncio.to_thread(_pdf_text, data)
-    except Exception as exc:
-        raise HTTPException(422, f"Could not read the PDF: {exc}")
-    if not text:
-        raise HTTPException(422, "No text found in the PDF (is it a scan?). Paste the text instead.")
-    return {"text": text, "chars": len(text)}
+        return {"name": name, "error": "The file is larger than 10 MB"}
+    lower = name.lower()
+    if lower.endswith(".pdf") or upload.content_type == "application/pdf":
+        try:
+            text = await asyncio.to_thread(_pdf_text, data)
+        except Exception as exc:
+            return {"name": name, "error": f"Could not read the PDF: {exc}"}
+        if not text:
+            return {"name": name, "error": "No text found in the PDF (is it a scan?). Paste the text instead."}
+    elif lower.endswith((".txt", ".md")) or (upload.content_type or "").startswith("text/"):
+        try:
+            text = data.decode("utf-8-sig").strip()
+        except UnicodeDecodeError:
+            return {"name": name, "error": "The file is not UTF-8 text"}
+        if not text:
+            return {"name": name, "error": "The file is empty"}
+    else:
+        return {"name": name, "error": "Only .pdf, .txt and .md files can be read"}
+    return {"name": name, "chars": len(text), "text": text}
+
+
+@app.post("/extract-text")
+async def extract_text(request: Request):
+    """Text of uploaded files (`files`, several allowed; `file` still works): one result per file."""
+    form = await request.form()
+    uploads = [f for f in form.getlist("files") + form.getlist("file") if not isinstance(f, str)]
+    if not uploads:
+        raise HTTPException(422, "No files uploaded")
+    if sum(f.size or 0 for f in uploads) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "These files are larger than 30 MB together; upload fewer at a time")
+    return [await _file_text(f) for f in uploads]
 
 
 @app.post("/packs")
 async def create_pack(pack: PackIn):
-    return db.create_pack(pack.model_dump())
+    return _pack_out(db.create_pack(_pack_data(pack)))
 
 
 @app.get("/packs")
@@ -385,14 +441,14 @@ async def get_pack(pack_id: str):
     pack = db.get_pack(pack_id)
     if not pack:
         raise HTTPException(404, "Pack not found")
-    return pack
+    return _pack_out(pack)
 
 
 @app.put("/packs/{pack_id}")
 async def update_pack(pack_id: str, pack: PackIn):
     if not db.get_pack(pack_id):
         raise HTTPException(404, "Pack not found")
-    return db.update_pack(pack_id, pack.model_dump())
+    return _pack_out(db.update_pack(pack_id, _pack_data(pack)))
 
 
 def _remove_files(paths: list[str]) -> None:
@@ -435,8 +491,8 @@ async def write_prep(pack_id: str):
     pack = db.get_pack(pack_id)
     if not pack:
         raise HTTPException(404, "Pack not found")
-    if not (pack.get("jd") or "").strip() and not (pack.get("profile") or "").strip():
-        raise HTTPException(422, "Add a job description or CV to the pack first")
+    if not materials.has_text(pack):
+        raise HTTPException(422, "Add some materials (a job description, a CV...) to the pack first")
     try:
         sheet = await prep.write(pack)
     except prep.PrepError as exc:
@@ -506,7 +562,7 @@ async def drill_attempt(pack_id: str, request: Request):
         if not stt.is_ready():
             raise HTTPException(503, f"Speech recognition is not ready ({stt.state['status']})")
         audio_bytes = await upload.read()
-        hint = stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", ""), pack.get("profile", ""))
+        hint = stt.keyword_prompt(pack.get("role") or "", pack.get("company") or "", materials.hint_texts(pack))
         try:
             answer = await gpu.run(stt.transcribe, audio_bytes, hint)
         except Exception as exc:
@@ -645,7 +701,7 @@ async def start_session(body: SessionIn):
         options=opts,
         started_at_ms=int(time.time() * 1000),
         voice=opts.get("voice") if opts.get("voice") in tts.VOICES else tts.DEFAULT_VOICE,
-        stt_prompt=stt.keyword_prompt(pack.get("role", ""), pack.get("company", ""), pack.get("jd", ""), pack.get("profile", "")),
+        stt_prompt=stt.keyword_prompt(pack.get("role") or "", pack.get("company") or "", materials.hint_texts(pack)),
     )
     LIVE[session_id] = live
     await live.lock.acquire()  # released when the stream finishes

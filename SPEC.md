@@ -44,9 +44,8 @@ Everything except Claude runs locally and costs nothing; memory budget for the m
 A session has three screens: Setup, Interview and Review.
 
 1. **Setup screen**
-   - Paste or upload the job description (text or PDF)
-   - My profile: CV text, saved once and reused, editable per session
-   - Company notes: free text (mission, products, recent news, values)
+   - Materials: any number of named texts, each with a kind (job, about me, organisation, format, other), uploaded (PDF, .txt, .md, several at once), pasted or drafted from the web. Up to 150,000 characters per pack. (Before Phase I there were three fixed boxes: job description, CV, company notes; packs from then show as three materials.)
+   - My CV is reused: a new pack starts with the latest pack's "about me" materials
    - Options: interview type (behavioural, technical, mixed, case, roleplay), stage (screening call, full, final round; default full), length (number of questions or minutes), difficulty, interviewer style (friendly, neutral, tough)
    - Saved as a reusable "interview pack" so I can re-run the same role
 2. **Interview screen**
@@ -147,7 +146,8 @@ The backend strips tags from the text before TTS and returns them with the chara
 ### Storage
 
 ```
-packs(id, title, role, company, jd, profile, company_notes, options_json, created_at)
+packs(id, title, role, company, jd, profile, company_notes, options_json, created_at)   -- jd/profile/company_notes: legacy packs only
+materials(id, pack_id, position, name, kind, source, text, created_at)
 sessions(id, pack_id, started_at, ended_at, recording_path, overall_score)
 turns(id, session_id, idx, speaker, text, expressions_json, t_start_ms, t_end_ms, t_listen_ms, face_json, segments_json, words_json)
 reports(session_id, report_json, report_md)

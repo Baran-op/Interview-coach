@@ -10,7 +10,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import claude_json
+from . import claude_json, materials
 from .categories import resolve_category
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -21,10 +21,12 @@ class PrepError(RuntimeError):
 
 
 def source_hash(pack: dict) -> str:
-    """SHA-1 of the JD, CV and company notes: changes when the sheet's sources change."""
+    """SHA-1 of the JD, CV and company notes (the materials' slot view, so a legacy pack hashes
+    as before): changes when the sheet's sources change."""
     h = hashlib.sha1()
+    slots = materials.legacy_slots(pack)
     for field in ("jd", "profile", "company_notes"):
-        h.update((pack.get(field) or "").strip().encode("utf-8"))
+        h.update((slots[field] or "").strip().encode("utf-8"))
         h.update(b"\0")
     return h.hexdigest()
 
@@ -85,12 +87,13 @@ def drill_questions(sheet: dict | None) -> list[dict]:
 
 
 def system_prompt(pack: dict) -> str:
+    slots = materials.legacy_slots(pack)
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
-        "jd": pack.get("jd") or "(not provided)",
-        "profile": pack.get("profile") or "(not provided)",
-        "company_notes": pack.get("company_notes") or "(not provided)",
+        "jd": slots["jd"] or "(not provided)",
+        "profile": slots["profile"] or "(not provided)",
+        "company_notes": slots["company_notes"] or "(not provided)",
     }
     text = (PROMPTS_DIR / "prep.txt").read_text(encoding="utf-8")
     for k, v in values.items():

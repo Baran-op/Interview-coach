@@ -12,7 +12,7 @@ import os
 import re
 from pathlib import Path
 
-from . import claude_json, db, delivery, prep
+from . import claude_json, db, delivery, materials, prep
 from .feedback import CRITERIA, _score
 
 log = logging.getLogger("interview-coach.drill")
@@ -123,12 +123,13 @@ SCHEMA = {
 
 
 def system_prompt(pack: dict) -> str:
+    slots = materials.legacy_slots(pack)
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
-        "jd": pack.get("jd") or "(not provided)",
-        "profile": pack.get("profile") or "(not provided)",
-        "company_notes": pack.get("company_notes") or "(not provided)",
+        "jd": slots["jd"] or "(not provided)",
+        "profile": slots["profile"] or "(not provided)",
+        "company_notes": slots["company_notes"] or "(not provided)",
     }
     text = (PROMPTS_DIR / "drill.txt").read_text(encoding="utf-8")
     for k, v in values.items():

@@ -459,3 +459,20 @@ details.story[open] { border-color: var(--border-strong); padding-bottom: 12px; 
 
 .drill-self { margin: 0 0 12px; display: flex; align-items: center; gap: 12px; }
 .self-view-inline { width: 128px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); transform: scaleX(-1); background: #000; }
+
+/* Materials list (Setup) */
+.materials { display: flex; flex-direction: column; gap: 10px; }
+.material-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.material { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface); }
+.material.failed { border-style: dashed; }
+.material .banner { margin: 8px 0 0; }
+.material-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.material-name { flex: 1 1 180px; min-width: 0; font-weight: 500; }
+.material-kind { flex: 0 0 150px; margin: 0; }
+.material-meta { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.material-text { margin-top: 6px; }
+.material-text summary { padding: 4px 0; }
+.material-text textarea { margin-top: 6px; }
+.material-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.material-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+.material-total.over { color: var(--danger); font-weight: 500; }

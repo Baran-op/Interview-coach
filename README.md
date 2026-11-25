@@ -95,12 +95,16 @@ still bleed into your answer.
 
 ## Using it
 
-1. On **Setup**, paste (or upload as .txt, .md or .pdf) the job description, your CV and any company notes, then choose
-   the type, number of questions, difficulty, style, interviewer name and **voice**
-   (US or UK English, female or male).
+1. On **Setup**, add your **materials**: upload files (.pdf, .txt or .md, several at once), paste text, or
+   draft company notes from the web. Anything goes: the job advert, your CV, company notes, a person
+   specification or mark scheme, a description of the interview format. Each material has a name and a
+   **kind** (job, about you, organisation, format, other), guessed from the file name; change it if the
+   guess is wrong. A pack holds up to 150,000 characters of text (the running total is shown); only the
+   extracted text is kept, never the file. Then choose the type, number of questions, difficulty, style,
+   interviewer name and **voice** (US or UK English, female or male).
 2. Click **Save pack & start interview**. Chrome asks for the microphone the first time.
-   The pack is saved, so you can start it again later from **Saved packs**. Your CV is
-   pre-filled from the latest pack.
+   The pack is saved, so you can start it again later from **Saved packs**. A new pack starts
+   with copies of the latest pack's "about you" materials (your CV).
 3. The interviewer greets you and asks the first question. When the dot turns blue it's
    your turn: answer out loud. Your turn ends when:
    - you stay silent for 2 s (adjustable: 1.5-5 s, or "only when I press Done"), or
@@ -167,8 +171,8 @@ minute.
 
 ### Packs and history
 
-- An **interview pack** is a saved role: the job description, your CV, company notes and
-  options (type, stage, length, difficulty, style, interviewer name, voice). You can run the same
+- An **interview pack** is a saved role: its materials (job description, CV, company notes and anything
+  else) and options (type, stage, length, difficulty, style, interviewer name, voice). You can run the same
   pack as often as you like.
 - **Length** is either a number of main questions or a number of minutes. In a timed
   interview the timer shows `elapsed / total`. Each of your answers reaches the interviewer
@@ -244,9 +248,9 @@ those words automatically.
 |---|---|---|
 | GET | `/health` | Claude auth plus the Whisper/Kokoro load state. 503 if `ANTHROPIC_API_KEY` is set or the token is missing |
 | GET | `/voices` | Kokoro voices offered in Setup |
-| POST | `/extract-text` | Multipart `file` (PDF, max 10 MB): returns `{text, chars}` for the Setup upload buttons |
-| POST | `/packs` | Create a pack |
-| GET | `/packs`, `/packs/{id}` | List or load packs |
+| POST | `/extract-text` | Multipart `files` (several; `file` also works): `.pdf`, `.txt`, `.md`, max 10 MB each and 30 MB per batch. Returns `[{name, chars, text} or {name, error}]`, one per file (no OCR) |
+| POST | `/packs` | Create a pack: `{title, role, company, materials: [{name, kind, source, text}], options}` (`kind` job/candidate/organisation/format/other, `source` paste/pdf/text_file/research). An old client may send `jd`/`profile`/`company_notes` instead. 422 without any text, 413 over 150,000 characters |
+| GET | `/packs`, `/packs/{id}` | List or load packs. `/packs/{id}` adds `materials` (a pack saved before materials existed shows its old fields as up to three `synthetic: true` materials) |
 | POST | `/sessions` | `{pack_id}` → streams the opening line (see below) |
 | POST | `/sessions/{id}/turn` | Multipart `audio` (WAV) or JSON `{text}`, plus optional `face` (JSON string / key: per-answer face stats, validated and stored in `turns.face_json`) and, with audio, `segments` (JSON list of `{start_ms, end_ms}` speech segments on the session clock, validated and stored in `turns.segments_json`) → streams the reply |
 | POST | `/sessions/{id}/end` | `{timeline:[{turn_idx,t_start_ms,t_end_ms,t_listen_ms?}], score?:true}`: closes the Claude client, stores turn timings, starts the report (not with `score:false`, used before discarding). Also sent by the browser on tab close, and by the server for idle interviews |
@@ -257,7 +261,7 @@ those words automatically.
 | GET | `/sessions/{id}/report.md` | Report as a Markdown download |
 | GET | `/sessions`, `/sessions/{id}` | Recent sessions; one session with its pack, turns and report status |
 | DELETE | `/sessions/{id}` | Delete a session with its transcript, report and recording |
-| PUT, DELETE | `/packs/{id}` | Edit a pack; delete it with all its sessions and recordings |
+| PUT, DELETE | `/packs/{id}` | Edit a pack (same body as POST; `materials` replaces the pack's materials and leaves the old text columns untouched); delete it with all its sessions, materials and recordings |
 | GET | `/packs/{id}/history`, `/history` | Finished sessions with overall and per-criterion scores, fillers and answer length |
 | GET | `/sessions/{id}/turns` | Stored transcript |
 | GET | `/packs/{id}/drill` | Drill questions: `{questions:[{key, question, category, source: starter/report/prep/custom, attempts, latest, best}]}` (starters, report questions averaging 2.5 or less, the prep sheet's likely questions, then your own) |
@@ -265,7 +269,7 @@ those words automatically.
 | POST | `/packs/{id}/prep` | Write or rewrite the prep sheet (one Claude request, no tools); returns the same shape |
 | POST | `/packs/{id}/drill/attempts` | Score one answer (one Claude request): multipart `audio` (WAV) + `question`, `category`, `seconds`, or JSON `{question, category, text, seconds?}`. Returns `{attempt, previous}`; the attempt's `result` has `scores`, `average`, `tips`, `improved`, `better_answer`, `delivery` (with `voice`, `voice_flags`, `voice_usual` when audio was sent, and `face`, `face_flags`, `face_usual` when the multipart also has `face`; optional `segments` give the quotes. Times in `face` and `segments` count from the start of the answer) |
 | GET | `/packs/{id}/drill/attempts?key=` | That question's attempts, oldest first |
-| POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s) |
+| POST | `/research` | `{company, role?, jd?}` -> `{notes, sources}`: one Claude request with WebSearch/WebFetch drafts company notes (nothing saved; ~45 s). Setup adds the result as an organisation material "Web research: <company>" with the sources appended |
 | POST | `/tts` | `{text, voice?}` -> `{sentences:[...]}`, each shaped like the NDJSON `sentence` event (reads a question aloud) |
 
 `/sessions` and `/turn` respond with NDJSON (one JSON object per line), so the first

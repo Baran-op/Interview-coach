@@ -207,15 +207,16 @@ def _within_budget(prompt: str) -> bool:
         return len(prompt) <= MAX_PROMPT_CHARS
 
 
-def keyword_prompt(role: str, company: str, jd: str, profile: str = "") -> str:
-    """Seed Whisper with vocabulary from the CV, then the JD (acronyms, product names...).
+def keyword_prompt(role: str, company: str, texts: list[str]) -> str:
+    """Seed Whisper with vocabulary from the pack's materials (acronyms, product names...).
 
-    Whisper keeps only the last 223 prompt tokens, so the list is capped (about 180 tokens)
-    to avoid pushing out the filler seed at the start.
+    `texts` are in priority order (materials.hint_texts: candidate, job, format, organisation,
+    other; for a legacy pack CV, JD, company notes). Whisper keeps only the last 223 prompt
+    tokens, so the list is capped (about 180 tokens) to avoid pushing out the filler seed.
     """
     terms: list[str] = []
     seen: set[str] = set()
-    for t in extract_terms(profile) + extract_terms(jd):   # CV first
+    for t in [t for text in texts for t in extract_terms(text)]:
         if t.lower() not in seen:
             seen.add(t.lower())
             terms.append(t)

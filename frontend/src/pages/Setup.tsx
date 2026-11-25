@@ -1,9 +1,10 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { api, type Pack, type PackInput, type SessionListItem } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, MAX_PACK_CHARS, type Material, type Pack, type PackInput, type SessionListItem } from '../api'
 import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
 import { faceModelAvailable, getFaceTracking, setFaceTracking } from '../face/FaceTracker'
 
 import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
+import Materials, { newKey, toSave, totalChars, type MaterialRow } from '../components/Materials'
 
 type Opts = PackInput['options']
 const TYPE_OPTIONS: DropdownOption<Opts['interview_type']>[] = [
@@ -40,13 +41,11 @@ const RECORD_OPTIONS: DropdownOption<RecordMode>[] = [
   { value: 'off', label: "Don't record" },
 ]
 
-const EMPTY: PackInput = {
+type Form = Omit<PackInput, 'materials'>
+const EMPTY: Form = {
   title: '',
   role: '',
   company: '',
-  jd: '',
-  profile: '',
-  company_notes: '',
   options: {
     interview_type: 'mixed',
     stage: 'full',
@@ -67,6 +66,10 @@ function voiceLabel(id: string) {
   return `${name ? name[0].toUpperCase() + name.slice(1) : id} (${accent} ${gender})`
 }
 
+const toRows = (ms: Material[]): MaterialRow[] =>
+  ms.map((m) => ({ key: newKey(), name: m.name, kind: m.kind, source: m.source, text: m.text, synthetic: m.synthetic }))
+const candidateCopies = (ms: Material[] | undefined) => toRows((ms ?? []).filter((m) => m.kind === 'candidate')).map((r) => ({ ...r, synthetic: false }))
+
 export function packSummary(p: Pack) {
   const o = p.options
   const length = o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`
@@ -81,12 +84,11 @@ interface Props {
 
 export default function Setup({ onStart, editPackId }: Props) {
   const [packs, setPacks] = useState<Pack[]>([])
-  const [form, setForm] = useState<PackInput>(EMPTY)
+  const [form, setForm] = useState<Form>(EMPTY)
+  const [rows, setRows] = useState<MaterialRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [researching, setResearching] = useState(false)
-  const [sources, setSources] = useState<string[]>([])
   const [voices, setVoices] = useState<string[]>(['af_heart'])
   const [recordMode, setMode] = useState<RecordMode>(getRecordMode)
   const [faceOn, setFaceOn] = useState(getFaceTracking)
@@ -107,8 +109,9 @@ export default function Setup({ onStart, editPackId }: Props) {
       .listPacks()
       .then((list) => {
         setPacks(list)
-        // The CV is saved once and reused: prefill it from the latest pack.
-        if (list.length > 0) setForm((f) => ({ ...f, profile: f.profile || list[0].profile }))
+        // The CV is saved once and reused: a new pack starts with the latest pack's candidate materials.
+        if (list.length > 0 && !editPackId)
+          api.getPack(list[0].id).then((p) => setRows((r) => (r.length ? r : candidateCopies(p.materials))), () => {})
       })
       .catch((e: Error) => setError(e.message))
   }, [])
@@ -117,56 +120,22 @@ export default function Setup({ onStart, editPackId }: Props) {
     if (editPackId) api.getPack(editPackId).then(editPack, (e: Error) => setError(e.message))
   }, [editPackId])
 
-  const set = <K extends keyof PackInput>(key: K, value: PackInput[K]) =>
-    setForm((f) => ({ ...f, [key]: value }))
+  const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
   const setOpt = <K extends keyof PackInput['options']>(key: K, value: PackInput['options'][K]) =>
     setForm((f) => ({ ...f, options: { ...f.options, [key]: value } }))
 
-  const loadFile = async (e: ChangeEvent<HTMLInputElement>, key: 'jd' | 'profile') => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setError(null)
-    try {
-      const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf'
-      set(key, isPdf ? await api.extractPdfText(file) : await file.text())
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  const draftNotes = async () => {
-    if (form.company_notes.trim() && !window.confirm('Replace the current company notes with a draft from the web?')) return
-    setError(null)
-    setResearching(true)
-    try {
-      const r = await api.research(form.company, form.role, form.jd)
-      set('company_notes', r.notes)
-      setSources(r.sources)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setResearching(false)
-    }
-  }
-
   const editPack = (p: Pack) => {
     setEditingId(p.id)
-    setForm({
-      title: p.title,
-      role: p.role,
-      company: p.company,
-      jd: p.jd,
-      profile: p.profile,
-      company_notes: p.company_notes,
-      options: { ...EMPTY.options, ...p.options },
-    })
+    setForm({ title: p.title, role: p.role, company: p.company, options: { ...EMPTY.options, ...p.options } })
+    setRows(toRows(p.materials ?? []))
     window.scrollTo({ top: 0 })
   }
+  const openPack = (p: Pack) => api.getPack(p.id).then(editPack, (e: Error) => setError(e.message))
 
   const stopEditing = () => {
     setEditingId(null)
-    setForm({ ...EMPTY, profile: form.profile })
+    setForm(EMPTY)
+    setRows((r) => r.filter((m) => m.kind === 'candidate').map((m) => ({ ...m, key: newKey(), synthetic: false })))
     if (window.location.hash.startsWith('#/edit/')) window.history.replaceState(null, '', '#/')
   }
 
@@ -175,7 +144,9 @@ export default function Setup({ onStart, editPackId }: Props) {
     setSaving(true)
     try {
       const title = form.title.trim() || [form.role, form.company].filter(Boolean).join(' @ ') || 'Untitled'
-      const data = { ...form, title }
+      const materials = toSave(rows)
+      if (!materials.length) throw new Error('Add at least one material with text: the job advert, your CV, notes…')
+      const data: PackInput = { ...form, title, materials }
       const pack = editingId && !asNew ? await api.updatePack(editingId, data) : await api.createPack(data)
       onStart(pack)
     } catch (err) {
@@ -205,8 +176,8 @@ export default function Setup({ onStart, editPackId }: Props) {
           <p className="eyebrow">{editingId ? 'Editing pack' : 'Mock interview'}</p>
           <h1 className="page-title">{editingId ? form.title || 'Edit pack' : 'Prepare a new interview'}</h1>
           <p className="muted lede">
-            Paste the job description and your CV. {o.interviewer_name || 'The interviewer'} will run a realistic interview
-            from them, and you get a scored report afterwards.
+            Add the job advert, your CV and anything else you have. {o.interviewer_name || 'The interviewer'} will run a
+            realistic interview from them, and you get a scored report afterwards.
           </p>
         </div>
         {editingId && (
@@ -238,87 +209,16 @@ export default function Setup({ onStart, editPackId }: Props) {
         </section>
 
         <section className="card section">
-          <div className="section-head">
-            <h2 className="section-title">
-              <span className="step">2</span> Job description
-            </h2>
-            <FileButton onFile={(e) => loadFile(e, 'jd')} />
-          </div>
-          <textarea
-            aria-label="Job description"
-            required
-            rows={10}
-            value={form.jd}
-            onChange={(e) => set('jd', e.target.value)}
-            placeholder="Paste the full job description"
-          />
-          <div className="field-foot muted small">{wordCount(form.jd)}</div>
+          <h2 className="section-title">
+            <span className="step">2</span> Materials
+          </h2>
+          <Materials rows={rows} onChange={setRows} company={form.company} role={form.role} onError={setError} />
         </section>
-
-        <section className="card section">
-          <div className="section-head">
-            <h2 className="section-title">
-              <span className="step">3</span> Your CV
-            </h2>
-            <FileButton onFile={(e) => loadFile(e, 'profile')} />
-          </div>
-          <textarea
-            aria-label="My profile / CV"
-            rows={8}
-            value={form.profile}
-            onChange={(e) => set('profile', e.target.value)}
-            placeholder="Paste your CV text (reused for future packs)"
-          />
-          <div className="field-foot muted small">{wordCount(form.profile)} · saved and reused for your next pack</div>
-        </section>
-
-        <details className="card section disclosure" open={!!form.company_notes || undefined}>
-          <summary>
-            <span className="section-title">
-              <span className="step">4</span> Company notes <span className="muted small optional">optional</span>
-            </span>
-            <span className="summary-meta muted small">{form.company_notes ? wordCount(form.company_notes) : 'Mission, products, news'}</span>
-            <Chevron />
-          </summary>
-          <div className="notes-body">
-            <div className="research-row">
-              <button type="button" className="small" disabled={!form.company.trim() || researching} onClick={draftNotes}>
-                {researching ? 'Searching the web (up to about a minute)…' : 'Draft from the web'}
-              </button>
-              <span className="muted small">
-                {form.company.trim()
-                  ? 'One Claude request with web search. The draft only fills this box: check and edit it before saving.'
-                  : 'Enter the company name above to draft notes from the web.'}
-              </span>
-            </div>
-            <textarea
-              aria-label="Company notes"
-              rows={5}
-              value={form.company_notes}
-              onChange={(e) => set('company_notes', e.target.value)}
-              placeholder="Mission, products, recent news, values"
-            />
-            {sources.length > 0 && (
-              <div className="sources small">
-                <span className="muted">Sources</span>
-                <ul>
-                  {sources.map((u) => (
-                    <li key={u}>
-                      <a href={u} target="_blank" rel="noreferrer">
-                        {u}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </details>
 
         <details className="card section disclosure" open>
           <summary>
             <span className="section-title">
-              <span className="step">5</span> Interview settings
+              <span className="step">3</span> Interview settings
             </span>
             <span className="summary-meta muted small">{settingsSummary}</span>
             <Chevron />
@@ -405,7 +305,7 @@ export default function Setup({ onStart, editPackId }: Props) {
 
         {error && <div className="banner error">{error}</div>}
         <div className="form-actions">
-          <button type="submit" className="primary large" disabled={saving}>
+          <button type="submit" className="primary large" disabled={saving || totalChars(rows) > MAX_PACK_CHARS}>
             {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Start interview'}
             {!saving && <span aria-hidden> →</span>}
           </button>
@@ -437,7 +337,7 @@ export default function Setup({ onStart, editPackId }: Props) {
                   <a className="button-link small" href={`#/drill/${p.id}`}>
                     Drill
                   </a>
-                  <button type="button" className="small ghost" onClick={() => editPack(p)}>
+                  <button type="button" className="small ghost" onClick={() => void openPack(p)}>
                     Edit
                   </button>
                   <button type="button" className="primary small" onClick={() => onStart(p)}>
@@ -475,22 +375,5 @@ export default function Setup({ onStart, editPackId }: Props) {
         )}
       </aside>
     </div>
-  )
-}
-
-function wordCount(text: string) {
-  const n = text.trim() ? text.trim().split(/\s+/).length : 0
-  return `${n.toLocaleString()} word${n === 1 ? '' : 's'}`
-}
-
-function FileButton({ onFile }: { onFile: (e: ChangeEvent<HTMLInputElement>) => void }) {
-  return (
-    <label className="file-button">
-      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
-        <path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      Upload PDF / TXT
-      <input type="file" accept=".txt,.md,.pdf" onChange={onFile} />
-    </label>
   )
 }

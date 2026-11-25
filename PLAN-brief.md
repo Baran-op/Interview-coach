@@ -537,7 +537,7 @@ No new dependencies. No new local models.
 
 - [x] I0. Golden prompts: today's rendered interviewer, feedback, drill and prep prompts and the two
       JSON schemas for fictional packs, with `test_golden.py`.
-- [ ] I1. Materials: table, multi-file upload and paste, the size cap, legacy packs shown as three
+- [x] I1. Materials: table, multi-file upload and paste, the size cap, legacy packs shown as three
       synthetic materials (no data rewrite), `PackIn` without a required `jd`, Setup's materials list,
       research result as a material, Whisper hints from all materials, default-mode slot mapping by kind.
 - [ ] I2. Brief backend: `brief.py`, `prompts/brief.txt`, schema, `clean_brief`, `source_hash`,

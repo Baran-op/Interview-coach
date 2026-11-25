@@ -16,20 +16,46 @@ export interface PackOptions {
   voice: string
 }
 
+export type MaterialKind = 'job' | 'candidate' | 'organisation' | 'format' | 'other'
+export type MaterialSource = 'paste' | 'pdf' | 'text_file' | 'research'
+
+export interface MaterialInput {
+  name: string
+  kind: MaterialKind
+  source: MaterialSource
+  text: string
+}
+
+export interface Material extends MaterialInput {
+  id: string
+  position: number
+  /** A legacy pack's text shown as a material; saving the pack stores it for real. */
+  synthetic?: boolean
+}
+
+/** Characters of material text a pack may hold (the backend returns 413 above it). */
+export const MAX_PACK_CHARS = 150_000
+
 export interface PackInput {
   title: string
   role: string
   company: string
-  jd: string
-  profile: string
-  company_notes: string
+  /** Replaces the old jd / profile / company_notes fields, which older packs still carry. */
+  materials: MaterialInput[]
   options: PackOptions
 }
 
-export interface Pack extends PackInput {
+export interface Pack extends Omit<PackInput, 'materials'> {
   id: string
   created_at: number
+  jd: string | null
+  profile: string | null
+  company_notes: string | null
+  /** Present on GET /packs/{id} and on create/update responses, not in the pack list. */
+  materials?: Material[]
 }
+
+export type ExtractedFile = { name: string; chars: number; text: string } | { name: string; error: string }
 
 export interface Expression {
   tag: string
@@ -389,12 +415,13 @@ export const api = {
     if (!res.ok && res.status !== 503) throw new Error('Backend not reachable on :8000')
     return res.json()
   },
-  extractPdfText: async (file: File) => {
+  /** Text of each uploaded .pdf / .txt / .md file; a file that fails gets its own error. */
+  extractText: async (files: File[]) => {
     const form = new FormData()
-    form.append('file', file)
+    for (const f of files) form.append('files', f)
     const res = await fetch('/api/extract-text', { method: 'POST', body: form })
     if (!res.ok) throw await errorFrom(res)
-    return ((await res.json()) as { text: string }).text
+    return (await res.json()) as ExtractedFile[]
   },
   research: (company: string, role: string, jd: string) =>
     request<{ notes: string; sources: string[] }>('/research', {

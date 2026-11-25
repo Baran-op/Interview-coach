@@ -58,13 +58,13 @@ def test_normalise_requires_answers():
 
 
 def test_keyword_prompt():
-    p = stt.keyword_prompt("Consultant", "Acme", "We use Dynamics 365 and Power BI with SQL.")
+    p = stt.keyword_prompt("Consultant", "Acme", ["We use Dynamics 365 and Power BI with SQL."])
     assert "Acme" in p and "Dynamics 365" in p and "SQL" in p
     assert len(p) <= 900
 
 
 def test_keyword_prompt_empty():
-    assert "a role" in stt.keyword_prompt("", "", "")
+    assert "a role" in stt.keyword_prompt("", "", [])
 
 
 def test_is_partial():

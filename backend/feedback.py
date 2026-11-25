@@ -12,7 +12,7 @@ import os
 import re
 from pathlib import Path
 
-from . import claude_json, db
+from . import claude_json, db, materials
 from .categories import CATEGORIES, clean_competency, resolve_category
 
 log = logging.getLogger("interview-coach.feedback")
@@ -90,15 +90,16 @@ def previous_fixes_text(fixes: list[str] | None) -> str:
 
 def _system_prompt(pack: dict, previous_fixes: list[str] | None = None) -> str:
     opts = pack.get("options") or {}
+    slots = materials.legacy_slots(pack)
     values = {
         "role": pack.get("role") or "the role",
         "company": pack.get("company") or "the company",
         "type": opts.get("interview_type") or "mixed",
         "stage": opts.get("stage") or "full",
         "difficulty": opts.get("difficulty") or "medium",
-        "jd": pack.get("jd") or "(not provided)",
-        "profile": pack.get("profile") or "(not provided)",
-        "company_notes": pack.get("company_notes") or "(not provided)",
+        "jd": slots["jd"] or "(not provided)",
+        "profile": slots["profile"] or "(not provided)",
+        "company_notes": slots["company_notes"] or "(not provided)",
         "previous_fixes": previous_fixes_text(previous_fixes),
     }
     text = (PROMPTS_DIR / "feedback.txt").read_text(encoding="utf-8")

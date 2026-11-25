@@ -25,6 +25,8 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
+from . import materials
+
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 EXPRESSION_TAGS = ("neutral", "smile", "thinking", "nod", "curious", "serious")
@@ -168,14 +170,15 @@ def history_block(history: list[dict] | None) -> str:
 def build_system_prompt(pack: dict, history: list[dict] | None = None) -> str:
     opts = pack.get("options") or {}
     template = (PROMPTS_DIR / "interviewer.txt").read_text(encoding="utf-8")
+    slots = materials.legacy_slots(pack)
     values = {
         "interviewer_name": opts.get("interviewer_name") or "Alex",
         "style": opts.get("style") or "neutral",
         "company": pack.get("company") or "the company",
         "role": pack.get("role") or "the role",
-        "jd": pack.get("jd") or "(not provided)",
-        "profile": pack.get("profile") or "(not provided)",
-        "company_notes": pack.get("company_notes") or "(none)",
+        "jd": slots["jd"] or "(not provided)",
+        "profile": slots["profile"] or "(not provided)",
+        "company_notes": slots["company_notes"] or "(none)",
         "type": opts.get("interview_type") or "mixed",
         "stage": stage_block(opts),
         "history": history_block(history),

@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import materials as mat
 from .categories import resolve_category
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -69,6 +70,17 @@ CREATE TABLE IF NOT EXISTS prep (
     prep_json TEXT,
     created_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS materials (
+    id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL REFERENCES packs(id),
+    position INTEGER NOT NULL,
+    name TEXT NOT NULL,          -- "Job advert", "CV", "Mark scheme"...
+    kind TEXT NOT NULL,          -- job | candidate | organisation | format | other
+    source TEXT NOT NULL,        -- paste | pdf | text_file | research
+    text TEXT NOT NULL,          -- only the extracted text, never the uploaded file
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS materials_by_pack ON materials (pack_id, position);
 CREATE INDEX IF NOT EXISTS attempts_by_question ON attempts (pack_id, question_key, created_at);
 """
 
@@ -126,6 +138,8 @@ def _pack_row(row: sqlite3.Row) -> dict:
 
 def create_pack(data: dict) -> dict:
     pack_id = uuid.uuid4().hex[:12]
+    if data.get("materials") is not None:  # the materials replace the three legacy text fields
+        data = {**data, "jd": None, "profile": None, "company_notes": None}
     with connect() as conn:
         conn.execute(
             "INSERT INTO packs (id, title, role, company, jd, profile, company_notes, options_json, created_at)"
@@ -136,6 +150,8 @@ def create_pack(data: dict) -> dict:
                 json.dumps(data.get("options") or {}), _now_ms(),
             ),
         )
+        if data.get("materials") is not None:
+            _write_materials(conn, pack_id, data["materials"])
     return get_pack(pack_id)
 
 
@@ -146,9 +162,32 @@ def list_packs() -> list[dict]:
 
 
 def get_pack(pack_id: str) -> dict | None:
+    """The pack with its stored `materials` attached ([] for a legacy pack: see pack_materials)."""
     with connect() as conn:
         row = conn.execute("SELECT * FROM packs WHERE id = ?", (pack_id,)).fetchone()
-    return _pack_row(row) if row else None
+        if not row:
+            return None
+        pack = _pack_row(row)
+        pack["materials"] = [dict(r) for r in conn.execute(
+            "SELECT id, position, name, kind, source, text FROM materials WHERE pack_id = ? ORDER BY position",
+            (pack_id,))]
+    return pack
+
+
+def pack_materials(pack: dict) -> list[dict]:
+    """Stored materials if there are any, else the legacy pack's synthetic ones (`synthetic: true`)."""
+    return mat.of_pack(pack)
+
+
+def _write_materials(conn: sqlite3.Connection, pack_id: str, items: list[dict]) -> None:
+    conn.execute("DELETE FROM materials WHERE pack_id = ?", (pack_id,))
+    now = _now_ms()
+    conn.executemany(
+        "INSERT INTO materials (id, pack_id, position, name, kind, source, text, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [(uuid.uuid4().hex[:12], pack_id, i, m["name"], m["kind"], m["source"], m["text"], now)
+         for i, m in enumerate(items)],
+    )
 
 
 # ------------------------------------------------------------- sessions ---- #
@@ -315,15 +354,24 @@ def list_turns(session_id: str) -> list[dict]:
 # ----------------------------------------------------- packs: edit/delete --- #
 
 def update_pack(pack_id: str, data: dict) -> dict | None:
+    """Update a pack. With `materials` (a list) they replace the pack's materials and the old text
+    columns are left untouched; without (an old client) the columns are written as before."""
     with connect() as conn:
-        conn.execute(
-            "UPDATE packs SET title = ?, role = ?, company = ?, jd = ?, profile = ?, company_notes = ?, "
-            "options_json = ? WHERE id = ?",
-            (
-                data["title"], data.get("role"), data.get("company"), data.get("jd"), data.get("profile"),
-                data.get("company_notes"), json.dumps(data.get("options") or {}), pack_id,
-            ),
-        )
+        if data.get("materials") is not None:
+            conn.execute(
+                "UPDATE packs SET title = ?, role = ?, company = ?, options_json = ? WHERE id = ?",
+                (data["title"], data.get("role"), data.get("company"), json.dumps(data.get("options") or {}), pack_id),
+            )
+            _write_materials(conn, pack_id, data["materials"])
+        else:
+            conn.execute(
+                "UPDATE packs SET title = ?, role = ?, company = ?, jd = ?, profile = ?, company_notes = ?, "
+                "options_json = ? WHERE id = ?",
+                (
+                    data["title"], data.get("role"), data.get("company"), data.get("jd"), data.get("profile"),
+                    data.get("company_notes"), json.dumps(data.get("options") or {}), pack_id,
+                ),
+            )
     return get_pack(pack_id)
 
 
@@ -350,6 +398,7 @@ def delete_pack(pack_id: str) -> list[str]:
             "SELECT audio_path FROM attempts WHERE pack_id = ? AND audio_path IS NOT NULL", (pack_id,))]
         conn.execute("DELETE FROM attempts WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM prep WHERE pack_id = ?", (pack_id,))
+        conn.execute("DELETE FROM materials WHERE pack_id = ?", (pack_id,))
         conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
     return paths
 
