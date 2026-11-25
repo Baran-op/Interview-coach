@@ -303,7 +303,7 @@ dependency.
 - [x] H4. 2a Face tracker, model fetch script, Setup toggle, `turns.face_json` (built; camera and performance check still to verify by hand, see "H4 still to verify")
 - [x] H5. 2b Face stats in the report and Review, with timed moments on the recording (built; needs real camera data to verify, see "H5 still to verify")
 - [x] H6. 2c What you were saying at each moment (word timestamps, VAD segments) (built; the quotes need a real webcam session to check, see "H6 still to verify")
-- [ ] H7. 2d Face stats in Drill
+- [x] H7. 2d Face stats in Drill (built; camera and quotes need a real webcam session to check, see "H7 still to verify")
 - [ ] H8. 3 Delivery trends in History (optional)
 
 ## Calibration results
@@ -367,3 +367,15 @@ Built and unit-tested (`words_at`, `clean_segments`), type-checked, never seen w
    including the redemption silence and the 300 ms pre-pad). Check by hand that a quote matches the recording for three
    moments; if quotes are consistently early or late, the offset is here.
 3. Run `python -m scripts.backfill_delivery` to add quotes to sessions recorded after this change (older ones have no segments).
+
+## H7 still to verify
+
+Built and type-checked, never run with a real camera:
+
+1. With the Setup toggle on and the model installed, opening Drill asks for the camera and shows a small self-view; with
+   the toggle off, or the model missing, no permission prompt appears and the camera light stays off. Leaving the page
+   turns the camera off. Denying permission shows a notice and Drill works as before.
+2. Three spoken attempts of one question show `eye contact N%` next to the pitch range in the attempt history.
+3. Face times and speech segments are on a clock that starts when you press Answer by voice, so moments read as time
+   into the answer. Quotes need `stt.words_from_wav` (a second Whisper pass, only when the answer has moments); typed
+   answers carry no face data.
