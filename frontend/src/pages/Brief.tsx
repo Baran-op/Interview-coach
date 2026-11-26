@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Assumption, type Brief as BriefT, type BriefCategory, type BriefState, type CriterionDef, type FormatKind, type Pack } from '../api'
 import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
+import AutoTextarea from '../components/AutoTextarea'
 
 const KIND_OPTIONS: DropdownOption<FormatKind>[] = [
   { value: 'conversation', label: 'Conversation', hint: 'One interviewer, question by question' },
@@ -23,7 +24,7 @@ function Lines({ label, value, onChange, rows = 4 }: { label: string; value: str
   return (
     <label>
       {label}
-      <textarea rows={rows} value={value.join('\n')} onChange={(e) => onChange(e.target.value.split('\n'))} />
+      <AutoTextarea rows={rows} value={value.join('\n')} onChange={(e) => onChange(e.target.value.split('\n'))} />
       <span className="hint">One per line.</span>
     </label>
   )
@@ -300,7 +301,7 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
           </div>
           <label>
             Summary
-            <textarea rows={3} maxLength={400} value={f.summary} onChange={(e) => setFormat({ summary: e.target.value })} />
+            <AutoTextarea rows={3} maxLength={400} value={f.summary} onChange={(e) => setFormat({ summary: e.target.value })} />
           </label>
           {f.kind === 'stations' && (
             <div className="brief-list">
@@ -323,11 +324,11 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
                   </div>
                   <label>
                     What it tests and how it runs
-                    <textarea rows={2} maxLength={600} value={s.brief} onChange={(e) => setStation(i, { brief: e.target.value })} />
+                    <AutoTextarea rows={2} maxLength={600} value={s.brief} onChange={(e) => setStation(i, { brief: e.target.value })} />
                   </label>
                   <label>
                     Scenario read out to you (optional)
-                    <textarea rows={3} maxLength={1500} value={s.scenario ?? ''} onChange={(e) => setStation(i, { scenario: e.target.value || null })} />
+                    <AutoTextarea rows={3} maxLength={1500} value={s.scenario ?? ''} onChange={(e) => setStation(i, { scenario: e.target.value || null })} />
                   </label>
                   <button type="button" className="small ghost" onClick={() => setFormat({ stations: f.stations.filter((_, j) => j !== i) })}>
                     Remove station
@@ -390,13 +391,13 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
               </div>
               <label>
                 What it rewards
-                <textarea rows={2} value={c.description} onChange={(e) => setAt('criteria', i, { description: e.target.value })} />
+                <AutoTextarea rows={2} value={c.description} onChange={(e) => setAt('criteria', i, { description: e.target.value })} />
               </label>
               <div className="row anchors">
                 {(['1', '3', '5'] as const).map((k) => (
                   <label key={k}>
                     {k} =
-                    <textarea rows={2} value={c.anchors[k]} onChange={(e) => setAt('criteria', i, { anchors: { ...c.anchors, [k]: e.target.value } })} />
+                    <AutoTextarea rows={2} value={c.anchors[k]} onChange={(e) => setAt('criteria', i, { anchors: { ...c.anchors, [k]: e.target.value } })} />
                   </label>
                 ))}
               </div>
@@ -485,11 +486,11 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
         <Section title="About you" meta={draft.candidate_summary ? `${draft.candidate_facts.length.toLocaleString()} chars of facts` : 'From your materials'}>
           <label>
             Summary for the interviewer
-            <textarea rows={5} maxLength={1200} value={draft.candidate_summary} onChange={(e) => set({ candidate_summary: e.target.value })} />
+            <AutoTextarea rows={5} maxLength={1200} value={draft.candidate_summary} onChange={(e) => set({ candidate_summary: e.target.value })} />
           </label>
           <label>
             Facts for scoring, prep and model answers (roles, projects, tools, numbers)
-            <textarea rows={10} maxLength={4000} value={draft.candidate_facts} onChange={(e) => set({ candidate_facts: e.target.value })} />
+            <AutoTextarea rows={10} maxLength={4000} value={draft.candidate_facts} onChange={(e) => set({ candidate_facts: e.target.value })} />
           </label>
         </Section>
       </fieldset>
@@ -557,7 +558,7 @@ function CategoryEditor({ c, onChange, onRemove }: { c: BriefCategory; onChange:
       </label>
       <label>
         Extra scoring rule (optional)
-        <textarea rows={2} maxLength={700} value={c.scoring_note} onChange={(e) => onChange({ scoring_note: e.target.value })} />
+        <AutoTextarea rows={2} maxLength={700} value={c.scoring_note} onChange={(e) => onChange({ scoring_note: e.target.value })} />
       </label>
       {onRemove && (
         <button type="button" className="small ghost" onClick={onRemove}>

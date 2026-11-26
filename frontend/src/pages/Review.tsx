@@ -220,7 +220,7 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
         </div>
       )}
 
-      <section className={`card ${tab === 'voice' ? 'is-hidden' : ''}`}>
+      <section className={`card review-media ${tab === 'voice' ? 'is-hidden' : ''}`}>
         {session.has_recording ? (
           <div className="player">
             <video
