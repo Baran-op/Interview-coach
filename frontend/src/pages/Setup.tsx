@@ -266,17 +266,17 @@ export default function Setup({ onStart, editPackId }: Props) {
                     <div className="field">
                       <span className="field-label">Length</span>
                       <span className="length">
+                        {o.minutes != null ? (
+                          <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', capped(e.target.value, 120))} onBlur={() => setOpt('minutes', floored(o.minutes ?? 0, 5))} />
+                        ) : (
+                          <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', capped(e.target.value, 20))} onBlur={() => setOpt('num_questions', floored(o.num_questions, 1))} />
+                        )}
                         <Dropdown
                           ariaLabel="Length in"
                           value={o.minutes != null ? 'minutes' : 'questions'}
                           options={LENGTH_OPTIONS}
                           onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
                         />
-                        {o.minutes != null ? (
-                          <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', capped(e.target.value, 120))} onBlur={() => setOpt('minutes', floored(o.minutes ?? 0, 5))} />
-                        ) : (
-                          <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', capped(e.target.value, 20))} onBlur={() => setOpt('num_questions', floored(o.num_questions, 1))} />
-                        )}
                       </span>
                     </div>
                   </>
