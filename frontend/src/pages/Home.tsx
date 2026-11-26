@@ -9,13 +9,28 @@ export default function Home({ onStart }: { onStart: (pack: Pack) => void }) {
   const [sessions, setSessions] = useState<SessionListItem[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const load = () => {
     api.listPacks().then(setPacks, (e: Error) => setError(e.message))
     api
       .listSessions(8)
       .then(setSessions)
       .catch(() => {})
-  }, [])
+  }
+  useEffect(load, [])
+
+  // Same confirmation as History: names the pack and how many sessions go with it.
+  const deletePack = async (p: Pack) => {
+    setError(null)
+    try {
+      const n = (await api.packHistory(p.id)).length
+      const what = n ? ` and its ${n} session${n > 1 ? 's' : ''} (recordings and reports)` : ''
+      if (!window.confirm(`Delete the pack "${p.title}"${what}? This can't be undone.`)) return
+      await api.deletePack(p.id)
+      load()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   return (
     <div className="home">
@@ -65,6 +80,7 @@ export default function Home({ onStart }: { onStart: (pack: Pack) => void }) {
                       { label: 'Prep', href: `#/prep/${p.id}` },
                       { label: 'Drill', href: `#/drill/${p.id}` },
                       { label: 'Edit', href: `#/edit/${p.id}` },
+                      { label: 'Delete pack', onSelect: () => void deletePack(p), danger: true },
                     ]}
                   />
                 </div>

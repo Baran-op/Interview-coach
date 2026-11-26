@@ -105,7 +105,7 @@ still bleed into your answer.
 2. Click **Save pack**. In its place the page then offers **Write the interview brief (1 Claude request)**
    or **Skip: use the standard interview** (see "The interview brief" below). Chrome asks for the microphone the first time.
    The pack is saved, so you can start it again later from **Saved packs** on Home (**Start**, **Open** for the pack's pages,
-   and **⋯** for Interview brief, Prep, Drill and Edit). A pack's pages share one header with tabs
+   and **⋯** for Interview brief, Prep, Drill, Edit and **Delete pack**, which asks first and also removes the pack's sessions and recordings). A pack's pages share one header with tabs
    **Materials | Brief | Prep | Drill** and **Start interview**; Materials (`#/edit/<pack id>`) edits the pack. A new pack starts
    with copies of the latest pack's "about you" materials (your CV).
 3. The interviewer greets you and asks the first question. When the dot turns blue it's

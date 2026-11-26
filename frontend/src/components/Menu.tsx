@@ -10,6 +10,8 @@ export interface MenuItem {
   disabled?: boolean
   /** Muted text under the label (why it is disabled, a cost). */
   hint?: string
+  /** Destructive (delete): set apart from the other items. */
+  danger?: boolean
 }
 
 interface Props {
@@ -125,7 +127,7 @@ export default function Menu({ label, ariaLabel, items, chevron, align = 'right'
               {item.hint && <span className="menu-hint">{item.hint}</span>}
             </a>
           ) : (
-            <button key={item.label} type="button" role="menuitem" tabIndex={-1} aria-disabled={item.disabled || undefined} onClick={() => pick(item)}>
+            <button key={item.label} type="button" role="menuitem" tabIndex={-1} className={item.danger ? 'menu-danger' : undefined} aria-disabled={item.disabled || undefined} onClick={() => pick(item)}>
               <span>{item.label}</span>
               {item.hint && <span className="menu-hint">{item.hint}</span>}
             </button>
