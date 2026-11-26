@@ -117,6 +117,10 @@ export default function Setup({ onStart, editPackId }: Props) {
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
   const setOpt = <K extends keyof PackInput['options']>(key: K, value: PackInput['options'][K]) =>
     setForm((f) => ({ ...f, options: { ...f.options, [key]: value } }))
+  // Browsers don't enforce min/max on typed numbers and the backend rejects out-of-range ones:
+  // cap the top while typing, raise the bottom on blur (so "120" can be typed via "1").
+  const capped = (v: string, max: number) => Math.min(max, Math.floor(Number(v)) || 0)
+  const floored = (v: number, min: number) => Math.max(min, v || 0)
 
   const editPack = (p: Pack) => {
     const f: Form = { title: p.title, role: p.role, company: p.company, options: { ...EMPTY.options, ...p.options } }
@@ -264,14 +268,14 @@ export default function Setup({ onStart, editPackId }: Props) {
                       <span className="length">
                         <Dropdown
                           ariaLabel="Length in"
-                          value={o.minutes ? 'minutes' : 'questions'}
+                          value={o.minutes != null ? 'minutes' : 'questions'}
                           options={LENGTH_OPTIONS}
                           onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
                         />
-                        {o.minutes ? (
-                          <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
+                        {o.minutes != null ? (
+                          <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', capped(e.target.value, 120))} onBlur={() => setOpt('minutes', floored(o.minutes ?? 0, 5))} />
                         ) : (
-                          <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+                          <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', capped(e.target.value, 20))} onBlur={() => setOpt('num_questions', floored(o.num_questions, 1))} />
                         )}
                       </span>
                     </div>
