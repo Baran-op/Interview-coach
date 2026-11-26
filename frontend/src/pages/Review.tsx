@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Chevron } from '../components/Dropdown'
+import Menu from '../components/Menu'
+import Tabs, { panelProps, type TabDef } from '../components/Tabs'
 import { getRecordMode } from '../audio/recorder'
 import VoiceTab from '../voice/VoiceTab'
 import { stopAllVoice } from '../voice/engine'
@@ -14,16 +16,19 @@ function clock(ms: number | null) {
 interface Props {
   sessionId: string
   onStart: (pack: Pack) => void
-  /** From the hash: #/review/<id>?tab=voice&q=<answer index>. */
-  tab?: 'feedback' | 'voice'
+  /** From the hash: #/review/<id>[?tab=answers|recording|voice[&q=<answer index>]]. */
+  tab?: ReviewTab
   q?: number | null
 }
 
-/** Move between the tabs and questions by changing the hash (back button works, links can be shared). */
-const reviewHash = (id: string, tab: 'feedback' | 'voice', q: number | null) =>
-  `#/review/${id}${tab === 'voice' ? `?tab=voice${q != null ? `&q=${q}` : ''}` : ''}`
+export type ReviewTab = 'summary' | 'answers' | 'recording' | 'voice'
+export const REVIEW_TABS: ReviewTab[] = ['summary', 'answers', 'recording', 'voice']
 
-export default function Review({ sessionId, onStart, tab = 'feedback', q = null }: Props) {
+/** Move between the tabs and questions by changing the hash (back button works, links can be shared). */
+const reviewHash = (id: string, tab: ReviewTab, q: number | null) =>
+  `#/review/${id}${tab === 'summary' ? '' : `?tab=${tab}${tab === 'voice' && q != null ? `&q=${q}` : ''}`}`
+
+export default function Review({ sessionId, onStart, tab = 'summary', q = null }: Props) {
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +38,9 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
   const [isPartial, setIsPartial] = useState(false)
   const [previous, setPrevious] = useState<HistorySession | null>(null)
   const video = useRef<HTMLVideoElement>(null)
+  const summaryRef = useRef<HTMLParagraphElement>(null)
+  const [moreSummary, setMoreSummary] = useState(false)
+  const [summaryClamped, setSummaryClamped] = useState(false)
 
   useEffect(() => {
     api.getSession(sessionId).then(setSession, (e: Error) => setError(e.message))
@@ -78,11 +86,19 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
     }
   }, [sessionId])
 
-  // Only one thing plays at a time: the recording on Feedback, the answer audio on Voice.
+  // Only one thing plays at a time: the recording on Answers / Recording, the answer audio on Voice.
+  // The video is hidden on Summary and Voice, so it pauses there.
   useEffect(() => {
-    if (tab === 'voice') video.current?.pause()
-    else stopAllVoice()
+    if (tab === 'voice' || tab === 'summary') video.current?.pause()
+    if (tab !== 'voice') stopAllVoice()
   }, [tab])
+
+  // "Read more" only when the clamped summary is actually cut off.
+  const summaryText = report?.report?.summary
+  useLayoutEffect(() => {
+    const el = summaryRef.current
+    if (el && !moreSummary && tab === 'summary') setSummaryClamped(el.scrollHeight > el.clientHeight + 1)
+  }, [summaryText, tab, moreSummary])
   useEffect(() => () => stopAllVoice(), [])
 
   const turns = session?.turns ?? []
@@ -149,6 +165,25 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
   const timelineMs = duration || (session.ended_at ? session.ended_at - session.started_at : 0)
   const avatarNote = getRecordMode() === 'avatar'
   const turnTime = (idx: number | null) => turns.find((t) => t.idx === idx)?.t_start_ms ?? null
+  const pending = !report || report.status === 'pending'
+  const failed = report && (report.status === 'error' || report.status === 'none')
+
+  const tabs: TabDef<ReviewTab>[] = [
+    { key: 'summary', label: 'Summary', href: reviewHash(sessionId, 'summary', null) },
+    { key: 'answers', label: r ? `Answers (${r.answers.length})` : 'Answers', href: reviewHash(sessionId, 'answers', null) },
+    { key: 'recording', label: 'Recording & transcript', href: reviewHash(sessionId, 'recording', null) },
+    { key: 'voice', label: 'Voice', href: reviewHash(sessionId, 'voice', q) },
+  ]
+
+  const deleteSession = async () => {
+    if (!window.confirm('Delete this session with its recording and report?')) return
+    try {
+      await api.deleteSession(sessionId)
+      window.location.hash = '#/history'
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   return (
     <div className="review">
@@ -162,163 +197,76 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
           </div>
         </h2>
         <div className="actions">
-          <a
-            className={`button-link ${session.has_recording ? '' : 'disabled'}`}
-            href={api.recordingUrl(sessionId, true)}
-            download
-          >
-            Download recording (.webm)
-          </a>
-          <a className={`button-link ${report?.report_md ? '' : 'disabled'}`} href={api.reportMdUrl(sessionId)} download>
-            Download report (.md)
-          </a>
           {pack && (
             <button className="primary" onClick={() => onStart(pack)}>
               Run this pack again
             </button>
           )}
-          <button
-            className="ghost"
-            onClick={async () => {
-              if (!window.confirm('Delete this session with its recording and report?')) return
-              try {
-                await api.deleteSession(sessionId)
-                window.location.hash = '#/history'
-              } catch (e) {
-                setError((e as Error).message)
-              }
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-
-      <div className="tabs" role="tablist" aria-label="Review sections">
-        <a role="tab" aria-selected={tab === 'feedback'} className={`tab ${tab === 'feedback' ? 'on' : ''}`} href={reviewHash(sessionId, 'feedback', null)}>
-          Feedback
-        </a>
-        <a role="tab" aria-selected={tab === 'voice'} className={`tab ${tab === 'voice' ? 'on' : ''}`} href={reviewHash(sessionId, 'voice', q)}>
-          Voice
-        </a>
-      </div>
-
-      {tab === 'voice' && (
-        <div className="voice-panel">
-          <VoiceTab
-            session={session}
-            report={report}
-            q={q}
-            onSelect={(i) => {
-              window.location.hash = reviewHash(sessionId, 'voice', i)
-            }}
-            onRewrite={() => {
-              if (window.confirm('Write the report again? This uses 1 Claude request and scores may shift.')) void regenerate()
-            }}
-            onPlayStart={() => video.current?.pause()}
+          <Menu
+            label="Download"
+            chevron
+            items={[
+              { label: 'Recording (.webm)', href: api.recordingUrl(sessionId, true), download: true, disabled: !session.has_recording, hint: session.has_recording ? undefined : 'No recording' },
+              { label: 'Report (.md)', href: api.reportMdUrl(sessionId), download: true, disabled: !report?.report_md, hint: report?.report_md ? undefined : 'No report yet' },
+            ]}
           />
+          <Menu label="⋯" ariaLabel="More actions" items={[{ label: 'Delete session', onSelect: () => void deleteSession() }]} />
         </div>
-      )}
+      </div>
 
-      <section className={`card review-media ${tab === 'voice' ? 'is-hidden' : ''}`}>
-        {session.has_recording ? (
-          <div className="player">
-            <video
-              ref={video}
-              className={audioOnly ? 'audio-only' : ''}
-              src={api.recordingUrl(sessionId)}
-              controls
-              preload="metadata"
-              onLoadedMetadata={onMetadata}
-              onPlay={stopAllVoice}
-              onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration * 1000)}
-              onTimeUpdate={(e) => setNowMs(e.currentTarget.currentTime * 1000)}
-            />
-            {allMoments.length > 0 && timelineMs > 0 && (
-              <div className="moment-bands" aria-label="Moments on the recording">
-                {allMoments.map((m, i) => (
-                  <button
-                    key={i}
-                    className="moment-band"
-                    title={momentText(m)}
-                    aria-label={momentText(m)}
-                    style={{ left: `${Math.min(100, (m.start_ms / timelineMs) * 100)}%`, width: `${Math.max(0.5, Math.min(100, ((m.end_ms - m.start_ms) / timelineMs) * 100))}%` }}
-                    onClick={() => seek(m.start_ms)}
-                  />
-                ))}
-              </div>
-            )}
-            {questions.length > 0 && (
-              <div className="markers">
-                {questions.map((q) => (
-                  <button
-                    key={q.turn.idx}
-                    className={`marker ${active === q.turn.idx ? 'active' : ''}`}
-                    title={q.turn.text}
-                    onClick={() => seek(q.turn.t_start_ms)}
-                  >
-                    {q.label} <span className="muted">{clock(q.turn.t_start_ms)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="muted">No recording for this session.</p>
-        )}
+      {error && <div className="banner error review-wide">{error}</div>}
 
-        <details className="disclosure plain" open>
-          <summary>
-            <h3>Transcript</h3>
-            <span className="summary-meta muted small">{turns.length} turns</span>
-            <Chevron />
-          </summary>
-        <div className="turns">
-          {turns.map((t) => (
-            <button
-              key={t.idx}
-              className={`turn ${t.speaker} ${active === t.idx ? 'active' : ''}`}
-              onClick={() => seek(t.t_start_ms)}
-              disabled={!session.has_recording || t.t_start_ms == null}
-            >
-              <span className="t">{timed ? clock(t.t_start_ms) : ''}</span>
-              <span>
-                <span className="who">{t.speaker === 'interviewer' ? pack?.options.interviewer_name || 'Interviewer' : 'You'}</span>
-                <br />
-                {t.text}
-              </span>
-            </button>
-          ))}
-        </div>
-        </details>
-      </section>
-
-      <section className={`card report ${tab === 'voice' ? 'is-hidden' : ''}`}>
-        <h2 className="section-title">Feedback</h2>
-        {error && <div className="banner error">{error}</div>}
-        {(!report || report.status === 'pending') && (
-          <p className="muted">Writing your feedback… This usually takes under a minute.</p>
-        )}
-        {report && (report.status === 'error' || report.status === 'none') && (
+      {/* Top: score, partial badge and the three things to fix. */}
+      <section className="card review-top">
+        {pending && <p className="muted">Writing your feedback… This usually takes under a minute.</p>}
+        {failed && (
           <div className="banner error">
             {report.error ?? 'No report yet.'}{' '}
             <button onClick={() => void regenerate()}>{report.status === 'none' ? 'Write report' : 'Try again'}</button>
           </div>
         )}
         {r && (
-          <>
-            <div className="overall">
+          <div className="top-grid">
+            <div className="top-score">
               <div className="big-score">
                 {r.overall_score.toFixed(1)}
                 <small> / 5</small>
               </div>
-              <p>{r.summary}</p>
+              {isPartial && (
+                <span className="badge" title="This session is marked partial and is left out of your history trends.">
+                  Partial: too few answers to count in trends
+                </span>
+              )}
             </div>
-            {isPartial && (
-              <div className="banner">
-                Too few answers to count: this session is marked partial and is left out of your history trends.
-              </div>
-            )}
+            <div className="top-fixes">
+              <h3>Top 3 things to fix</h3>
+              <ol className="fixes">
+                {r.top_fixes.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <Tabs label="Review sections" tabs={tabs} current={tab} idPrefix="review" />
+
+      {/* Summary */}
+      <section className={`card report ${tab === 'summary' ? '' : 'is-hidden'}`} {...panelProps('review', 'summary')}>
+        {!r && <p className="muted">{pending ? 'The summary appears once the report is written.' : 'No report yet.'}</p>}
+        {r && (
+          <>
+            <div className="clamp-wrap">
+              <p ref={summaryRef} className={`summary-text ${moreSummary ? '' : 'clamped'}`}>
+                {r.summary}
+              </p>
+              {(summaryClamped || moreSummary) && (
+                <button className="small ghost" aria-expanded={moreSummary} onClick={() => setMoreSummary((m) => !m)}>
+                  {moreSummary ? 'Show less' : 'Read more'}
+                </button>
+              )}
+            </div>
             {previous && <Comparison report={r} previous={previous} />}
 
             {(r.previous_fixes?.length ?? 0) > 0 && (
@@ -337,13 +285,6 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
                 </ul>
               </>
             )}
-
-            <h3>Top 3 things to fix</h3>
-            <ol className="fixes">
-              {r.top_fixes.map((f, i) => (
-                <li key={i}>{f}</li>
-              ))}
-            </ol>
 
             <h3>Delivery</h3>
             <div className="stats">
@@ -373,76 +314,174 @@ export default function Review({ sessionId, onStart, tab = 'feedback', q = null 
                 ))}
               </ul>
             )}
-
-            <h3>Your answers</h3>
-            {r.answers.map((a, i) => {
-              const at = turnTime(a.question_turn)
-              const avg = criteria.reduce((n, c) => n + (a.scores[c.key] ?? 0), 0) / criteria.length
-              return (
-                <details key={i} className="answer disclosure" open={i === 0 || undefined}>
-                  <summary>
-                    <span className="answer-n">{i + 1}</span>
-                    <strong className="answer-title">{a.question}</strong>
-                    <span className="score-chip" title={`Average of the ${criteria.length} criteria`}>
-                      {avg.toFixed(1)}
-                    </span>
-                    <Chevron />
-                  </summary>
-                  <div className="answer-tools">
-                    {a.category && (
-                      <span className="chip" title={a.competency || undefined}>
-                        {categoryLabel(a.category, r)}
-                        {a.competency ? ` · ${a.competency}` : ''}
-                      </span>
-                    )}
-                    {session.has_recording && at != null && (
-                      <button className="small" onClick={() => seek(at)}>
-                        ▶ Play from {clock(at)}
-                      </button>
-                    )}
-                    <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
-                      Practise this question
-                    </a>
-                    {a.question_turn != null && (
-                      <a className="button-link small" href={reviewHash(sessionId, 'voice', i)}>
-                        Voice ▸
-                      </a>
-                    )}
-                  </div>
-                  <div className="bars">
-                    {criteria.map((c) => (
-                      <FragmentBar key={c.key} label={c.name} value={a.scores[c.key] ?? 0} />
-                    ))}
-                  </div>
-                  {a.delivery && <DeliveryLine d={a.delivery} />}
-                  {(a.delivery?.face?.moments?.length ?? 0) > 0 && (
-                    <MomentList
-                      moments={a.delivery!.face!.moments!}
-                      canSeek={session.has_recording}
-                      onSeek={seek}
-                      note={avatarNote && i === firstMomentAnswer(r.answers)}
-                    />
-                  )}
-                  <p className="small">{a.answer_summary}</p>
-                  {a.tips.length > 0 && (
-                    <ul className="small">
-                      {a.tips.map((t, j) => (
-                        <li key={j}>{t}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {a.better_answer && (
-                    <details className="better">
-                      <summary>A stronger answer</summary>
-                      <p>{a.better_answer}</p>
-                    </details>
-                  )}
-                </details>
-              )
-            })}
+            <p className="small">
+              <a href={reviewHash(sessionId, 'answers', null)}>See each answer →</a>
+            </p>
           </>
         )}
       </section>
+
+      {tab === 'voice' && (
+        <div className="voice-panel" {...panelProps('review', 'voice')}>
+          <VoiceTab
+            session={session}
+            report={report}
+            q={q}
+            onSelect={(i) => {
+              window.location.hash = reviewHash(sessionId, 'voice', i)
+            }}
+            onRewrite={() => {
+              if (window.confirm('Write the report again? This uses 1 Claude request and scores may shift.')) void regenerate()
+            }}
+            onPlayStart={() => video.current?.pause()}
+          />
+        </div>
+      )}
+
+      {/* Answers and Recording share one video element, so "Play from" works from either tab. */}
+      <div className={`review-body on-${tab} ${session.has_recording ? 'has-video' : ''} ${tab === 'answers' || tab === 'recording' ? '' : 'is-hidden'}`}>
+        <section className={`card report answers-panel ${tab === 'answers' ? '' : 'is-hidden'}`} {...panelProps('review', 'answers')}>
+          {!r && <p className="muted">{pending ? 'Writing your feedback… This usually takes under a minute.' : 'No report yet.'}</p>}
+          {r?.answers.map((a, i) => {
+            const at = turnTime(a.question_turn)
+            const avg = criteria.reduce((n, c) => n + (a.scores[c.key] ?? 0), 0) / criteria.length
+            return (
+              <details key={i} className="answer disclosure" open={i === 0 || undefined}>
+                <summary>
+                  <span className="answer-n">{i + 1}</span>
+                  <strong className="answer-title">{a.question}</strong>
+                  <span className="score-chip" title={`Average of the ${criteria.length} criteria`}>
+                    {avg.toFixed(1)}
+                  </span>
+                  <Chevron />
+                </summary>
+                <div className="answer-tools">
+                  {a.category && (
+                    <span className="chip" title={a.competency || undefined}>
+                      {categoryLabel(a.category, r)}
+                      {a.competency ? ` · ${a.competency}` : ''}
+                    </span>
+                  )}
+                  {session.has_recording && at != null && (
+                    <button className="small" onClick={() => seek(at)}>
+                      ▶ Play from {clock(at)}
+                    </button>
+                  )}
+                  <a className="button-link small" href={`#/drill/${session.pack_id}?q=${encodeURIComponent(a.question)}`}>
+                    Practise this question
+                  </a>
+                  {a.question_turn != null && (
+                    <a className="button-link small" href={reviewHash(sessionId, 'voice', i)}>
+                      Voice ▸
+                    </a>
+                  )}
+                </div>
+                <div className="bars">
+                  {criteria.map((c) => (
+                    <FragmentBar key={c.key} label={c.name} value={a.scores[c.key] ?? 0} />
+                  ))}
+                </div>
+                {a.delivery && <DeliveryTiles d={a.delivery} />}
+                {(a.delivery?.face?.moments?.length ?? 0) > 0 && (
+                  <MomentList
+                    moments={a.delivery!.face!.moments!}
+                    canSeek={session.has_recording}
+                    onSeek={seek}
+                    note={avatarNote && i === firstMomentAnswer(r.answers)}
+                  />
+                )}
+                <p className="small">{a.answer_summary}</p>
+                {a.tips.length > 0 && (
+                  <ul className="small">
+                    {a.tips.map((t, j) => (
+                      <li key={j}>{t}</li>
+                    ))}
+                  </ul>
+                )}
+                {a.better_answer && (
+                  <details className="better">
+                    <summary>A stronger answer</summary>
+                    <p>{a.better_answer}</p>
+                  </details>
+                )}
+              </details>
+            )
+          })}
+        </section>
+
+        <section className={`card review-media ${tab === 'recording' ? '' : 'mini'}`} {...(tab === 'recording' ? panelProps('review', 'recording') : {})}>
+          {session.has_recording ? (
+            <div className="player">
+              <video
+                ref={video}
+                className={audioOnly ? 'audio-only' : ''}
+                src={api.recordingUrl(sessionId)}
+                controls
+                preload="metadata"
+                onLoadedMetadata={onMetadata}
+                onPlay={stopAllVoice}
+                onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration * 1000)}
+                onTimeUpdate={(e) => setNowMs(e.currentTarget.currentTime * 1000)}
+              />
+              {allMoments.length > 0 && timelineMs > 0 && (
+                <div className="moment-bands recording-only" aria-label="Moments on the recording">
+                  {allMoments.map((m, i) => (
+                    <button
+                      key={i}
+                      className="moment-band"
+                      title={momentText(m)}
+                      aria-label={momentText(m)}
+                      style={{ left: `${Math.min(100, (m.start_ms / timelineMs) * 100)}%`, width: `${Math.max(0.5, Math.min(100, ((m.end_ms - m.start_ms) / timelineMs) * 100))}%` }}
+                      onClick={() => seek(m.start_ms)}
+                    />
+                  ))}
+                </div>
+              )}
+              {questions.length > 0 && (
+                <div className="markers recording-only">
+                  {questions.map((q) => (
+                    <button
+                      key={q.turn.idx}
+                      className={`marker ${active === q.turn.idx ? 'active' : ''}`}
+                      title={q.turn.text}
+                      onClick={() => seek(q.turn.t_start_ms)}
+                    >
+                      {q.label} <span className="muted">{clock(q.turn.t_start_ms)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="muted recording-only">No recording for this session.</p>
+          )}
+
+          <details className="disclosure plain transcript-box recording-only" open>
+            <summary>
+              <h3>Transcript</h3>
+              <span className="summary-meta muted small">{turns.length} turns</span>
+              <Chevron />
+            </summary>
+            <div className="turns">
+              {turns.map((t) => (
+                <button
+                  key={t.idx}
+                  className={`turn ${t.speaker} ${active === t.idx ? 'active' : ''}`}
+                  onClick={() => seek(t.t_start_ms)}
+                  disabled={!session.has_recording || t.t_start_ms == null}
+                >
+                  <span className="t">{timed ? clock(t.t_start_ms) : ''}</span>
+                  <span>
+                    <span className="who">{t.speaker === 'interviewer' ? pack?.options.interviewer_name || 'Interviewer' : 'You'}</span>
+                    <br />
+                    {t.text}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </details>
+        </section>
+      </div>
     </div>
   )
 }
@@ -554,57 +593,37 @@ function MomentList({ moments, canSeek, onSeek, note }: { moments: FaceMoment[];
 
 const mmss = (s: number) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`
 
-/** Per-answer delivery stats; length outside the target is highlighted. */
-function DeliveryLine({ d }: { d: AnswerDelivery }) {
-  const n = (c: number, w: string) => `${c} ${w}${c === 1 ? '' : 's'}`
-  const parts: { text: string; bad?: boolean }[] = [
+/** Per-answer delivery stats as small tiles; values outside the target are highlighted, tooltips as before. */
+function DeliveryTiles({ d }: { d: AnswerDelivery }) {
+  const tiles: { value: string; label: string; bad?: boolean; title?: string }[] = [
     {
-      text: mmss(d.first_answer_seconds) + (d.target ? ` (aim ${mmss(d.target[0])}-${mmss(d.target[1])})` : ''),
+      value: mmss(d.first_answer_seconds),
+      label: d.target ? `length (aim ${mmss(d.target[0])}-${mmss(d.target[1])})` : 'length',
       bad: d.flag !== null,
+      title: d.flag ? `This answer was too ${d.flag} for its question type` : undefined,
     },
   ]
-  if (d.wpm) parts.push({ text: `${d.wpm} wpm`, bad: d.wpm > 180 || d.wpm < 100 })
-  parts.push({ text: `I ${d.i_count} / we ${d.we_count}`, bad: d.we_count > d.i_count })
-  parts.push({ text: n(d.numbers, 'number'), bad: d.numbers === 0 })
-  parts.push({ text: n(d.fillers, 'filler'), bad: d.fillers >= 5 })
-  parts.push({ text: n(d.hedges, 'hedge'), bad: d.hedges >= 3 })
-  if (d.pauses_over_1s) parts.push({ text: n(d.pauses_over_1s, 'long pause'), bad: true })
-  const voiceTip = voiceTooltip(d)
+  if (d.wpm) tiles.push({ value: String(d.wpm), label: 'words per minute', bad: d.wpm > 180 || d.wpm < 100 })
+  tiles.push({ value: `${d.i_count} / ${d.we_count}`, label: 'I / we', bad: d.we_count > d.i_count })
+  tiles.push({ value: String(d.numbers), label: d.numbers === 1 ? 'number' : 'numbers', bad: d.numbers === 0 })
+  tiles.push({ value: String(d.fillers), label: d.fillers === 1 ? 'filler' : 'fillers', bad: d.fillers >= 5 })
+  tiles.push({ value: String(d.hedges), label: d.hedges === 1 ? 'hedge' : 'hedges', bad: d.hedges >= 3 })
+  if (d.pauses_over_1s) tiles.push({ value: String(d.pauses_over_1s), label: d.pauses_over_1s === 1 ? 'long pause' : 'long pauses', bad: true })
   const flags = d.voice_flags ?? []
-  const faceFlags = d.face_flags ?? []
+  if (flags.length > 0) tiles.push({ value: flags.map((f) => VOICE_FLAG_LABEL[f]).join(', '), label: 'voice', bad: true, title: voiceTooltip(d) || undefined })
   const eye = d.face?.on_screen_pct
+  const faceTip = faceTooltip(d) || undefined
+  if (eye != null) tiles.push({ value: `${Math.round(eye)}%`, label: 'eye contact', title: faceTip })
+  const faceFlags = (d.face_flags ?? []).filter((f) => f !== 'low_eye_contact')
+  if (faceFlags.length > 0) tiles.push({ value: faceFlags.map((f) => FACE_FLAG_LABEL[f]).join(', '), label: 'face', bad: true, title: faceTip })
   return (
-    <p className="small delivery-line" title={d.flag ? `This answer was too ${d.flag} for its question type` : undefined}>
-      {parts.map((p, i) => (
-        <span key={i}>
-          {i > 0 && ' · '}
-          <span className={p.bad ? 'out-of-target' : undefined}>{p.text}</span>
-        </span>
+    <div className="mini-stats" role="list" aria-label="Delivery">
+      {tiles.map((t) => (
+        <div key={t.label} role="listitem" className="mini-stat" title={t.title} tabIndex={t.title ? 0 : undefined}>
+          <div className={`n ${t.bad ? 'out-of-target' : ''}`}>{t.value}</div>
+          <div className="muted small">{t.label}</div>
+        </div>
       ))}
-      {flags.length > 0 && (
-        <span title={voiceTip || undefined}>
-          {' · voice: '}
-          {flags.map((f, i) => (
-            <span key={f}>
-              {i > 0 && ', '}
-              <span className="out-of-target">{VOICE_FLAG_LABEL[f]}</span>
-            </span>
-          ))}
-        </span>
-      )}
-      {(eye != null || faceFlags.length > 0) && (
-        <span title={faceTooltip(d) || undefined}>
-          {eye != null && ` · eye contact ${Math.round(eye)}%`}
-          {faceFlags
-            .filter((f) => f !== 'low_eye_contact')
-            .map((f) => (
-              <span key={f}>
-                {' · '}
-                <span className="out-of-target">{FACE_FLAG_LABEL[f]}</span>
-              </span>
-            ))}
-        </span>
-      )}
-    </p>
+    </div>
   )
 }

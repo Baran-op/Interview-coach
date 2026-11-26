@@ -285,7 +285,7 @@ summary .section-title { margin: 0; flex: none; }
 .avatar-progress { position: absolute; inset: 0; display: grid; place-items: center; color: #52525b; }
 
 /* ---------- review ---------- */
-.review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.review { display: flex; flex-direction: column; gap: 16px; }
 .review-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 20px; }
 .review-head > div:first-child { flex: 1; min-width: 220px; }
 .review-head h2 { margin: 0; flex: 1; min-width: 220px; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; display: block; }
@@ -304,9 +304,6 @@ summary .section-title { margin: 0; flex: none; }
 .marker.active .muted { color: inherit; opacity: 0.7; }
 .marker.active:hover:not(:disabled) { background: var(--ink-hover); }
 .turns { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
-/* The recording and transcript stay in view beside the (longer) feedback column. */
-.review-media { position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; }
-.review-media .turns { max-height: none; overflow: visible; }
 .turn { text-align: left; display: grid; grid-template-columns: 3.2em 1fr; gap: 8px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 400; white-space: normal; justify-content: stretch; align-items: start; line-height: 1.5; }
 .turn.candidate { background: var(--surface-2); }
 .turn.active { border-color: var(--text); box-shadow: inset 3px 0 0 var(--text); }
@@ -439,9 +436,6 @@ details.story[open] { border-color: var(--border-strong); padding-bottom: 12px; 
   .drill-body { grid-template-columns: 1fr; }
   .drill-list { position: static; }
   .sidebar { position: static; }
-  .review { grid-template-columns: 1fr; }
-  .review-media { position: static; max-height: none; overflow: visible; }
-  .review-media .turns { max-height: 60vh; overflow-y: auto; }
 }
 @media (max-width: 800px) {
   main { padding: 20px 16px 48px; }
@@ -617,3 +611,50 @@ button.strong { border-color: var(--text); font-weight: 600; }
   .brief-actions button { padding: 6px 10px; font-size: 0.82rem; }
   .station-row > summary .chip { display: none; }
 }
+
+/* ---------- review: top summary, tabs, answers with a pinned video ---------- */
+.review-top h3, .review-top-label { margin: 0 0 10px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.top-grid { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; align-items: start; }
+.top-score { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--text); font-size: 0.76rem; font-weight: 600; line-height: 1.35; }
+.top-fixes li { max-width: 80ch; }
+.summary-text { margin: 0 0 4px; color: var(--text-2); max-width: 72ch; }
+.summary-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp-wrap > button { padding-left: 0; }
+.report > p, .report li, .answer p, .answer li, .prep p, .prep li, .drill-result p, .drill-result li { max-width: 72ch; }
+.review-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.review-body.on-answers.has-video { grid-template-columns: minmax(0, 1fr) 320px; }
+.on-answers .review-media { position: sticky; top: 72px; padding: 10px; }
+.on-answers:not(.has-video) .review-media { display: none; }
+.review-media.mini .recording-only { display: none !important; }
+.review-media:not(.mini) { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.review-media:not(.mini) .transcript-box > summary { border-top: 0; margin-top: 0; padding-top: 0; }
+.review-media:not(.mini) .turns { max-height: calc(100vh - 190px); }
+.mini-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; margin: 4px 0 12px; }
+.mini-stat { padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
+.mini-stat[title] { cursor: help; }
+.mini-stat .n { font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; line-height: 1.3; }
+.mini-stat .small { font-size: 0.76rem; }
+@media (max-width: 960px) {
+  .top-grid { grid-template-columns: 1fr; gap: 14px; }
+  .review-media:not(.mini) { grid-template-columns: 1fr; }
+  .review-media:not(.mini) .turns { max-height: 60vh; }
+  .review-body.on-answers.has-video { grid-template-columns: 1fr; }
+  /* Narrow: the video floats in the corner so "Play from" still shows something. */
+  .on-answers .review-media { position: fixed; right: 12px; bottom: 12px; top: auto; z-index: 15; width: 220px; padding: 6px; box-shadow: var(--shadow-pop); }
+  .on-answers .review-media:has(video.audio-only) { left: 12px; width: auto; }
+  .on-answers .answers-panel { padding-bottom: 150px; }
+}
+
+/* ---------- menu button ---------- */
+.menu { position: relative; display: inline-block; }
+.menu > button .chevron { margin-left: 2px; }
+.menu.open > button .chevron { transform: rotate(180deg); }
+.menu-list { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 200px; padding: 4px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-pop); animation: pop 0.12s ease-out; }
+.menu-list.left { left: 0; right: auto; }
+.menu-list[hidden] { display: none; }
+.menu-list > a, .menu-list > button { display: flex; flex-direction: column; align-items: flex-start; gap: 0; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: 0.88rem; font-weight: 400; text-decoration: none; text-align: left; white-space: nowrap; cursor: pointer; }
+.menu-list > a:hover, .menu-list > button:hover:not([aria-disabled]), .menu-list > :focus { background: var(--surface-2); outline: none; }
+.menu-list > :focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.menu-list > [aria-disabled='true'] { opacity: 0.45; cursor: default; }
+.menu-hint { font-size: 0.75rem; color: var(--muted); }

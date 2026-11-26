@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, type Pack } from './api'
 import Setup from './pages/Setup'
 import Interview from './pages/Interview'
-import Review from './pages/Review'
+import Review, { REVIEW_TABS, type ReviewTab } from './pages/Review'
 import History from './pages/History'
 import Drill from './pages/Drill'
 import Prep from './pages/Prep'
@@ -11,13 +11,13 @@ import Brief from './pages/Brief'
 type Screen =
   | { name: 'setup'; editPackId?: string }
   | { name: 'interview'; pack: Pack }
-  | { name: 'review'; sessionId: string; tab: 'feedback' | 'voice'; q: number | null }
+  | { name: 'review'; sessionId: string; tab: ReviewTab; q: number | null }
   | { name: 'history' }
   | { name: 'drill'; packId: string; q: string | null; from: string | null }
   | { name: 'prep'; packId: string }
   | { name: 'brief'; packId: string; generate: boolean }
 
-// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>[&from=<session>~<turn>~<section>], #/review/<session id>[?tab=voice&q=<answer index>],
+// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>[&from=<session>~<turn>~<section>], #/review/<session id>[?tab=answers|recording|voice[&q=<answer index>]],
 // #/prep/<pack id>, #/brief/<pack id>[?generate=1].
 function fromHash(current: Screen): Screen {
   const hash = window.location.hash
@@ -25,7 +25,8 @@ function fromHash(current: Screen): Screen {
   if (review) {
     const qs = new URLSearchParams(review[2] ?? '')
     const q = qs.get('q')
-    return { name: 'review', sessionId: review[1], tab: qs.get('tab') === 'voice' ? 'voice' : 'feedback', q: q != null && /^\d+$/.test(q) ? Number(q) : null }
+    const tab = REVIEW_TABS.find((t) => t === qs.get('tab')) ?? 'summary'
+    return { name: 'review', sessionId: review[1], tab, q: q != null && /^\d+$/.test(q) ? Number(q) : null }
   }
   const drill = hash.match(/^#\/drill\/([\w-]+)(?:\?(.*))?/)
   if (drill) {
@@ -116,7 +117,7 @@ export default function App() {
           <Interview
             pack={screen.pack}
             onExit={() => go({ name: 'setup' }, '#/')}
-            onReview={(sessionId) => go({ name: 'review', sessionId, tab: 'feedback', q: null }, `#/review/${sessionId}`)}
+            onReview={(sessionId) => go({ name: 'review', sessionId, tab: 'summary', q: null }, `#/review/${sessionId}`)}
           />
         )}
         {screen.name === 'review' && (
