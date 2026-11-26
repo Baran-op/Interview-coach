@@ -147,7 +147,15 @@ export default function Setup({ onStart, editPackId }: Props) {
       const title = form.title.trim() || [form.role, form.company].filter(Boolean).join(' @ ') || 'Untitled'
       const materials = toSave(rows)
       if (!materials.length) throw new Error('Add at least one material with text: the job advert, your CV, notes…')
-      const data: PackInput = { ...form, title, materials }
+      // Clamp on the way out too: a value typed before switching Questions/Minutes stays in the form.
+      const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(v) || min))
+      const opts = form.options
+      const options = {
+        ...opts,
+        num_questions: clamp(opts.num_questions, 1, 20),
+        minutes: opts.minutes == null ? null : clamp(opts.minutes, 5, 120),
+      }
+      const data: PackInput = { ...form, options, title, materials }
       const pack = editingId && !asNew ? await api.updatePack(editingId, data) : await api.createPack(data)
       if (!editingId || asNew) {
         setSaved(pack)
