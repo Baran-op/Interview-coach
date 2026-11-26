@@ -9,6 +9,7 @@ import { Chevron } from '../components/Dropdown'
 import { parseFrom } from '../voice/answers'
 import LastTime, { type LastInfo } from '../voice/LastTime'
 import TurnVoice from '../voice/TurnVoice'
+import PackHeader from '../components/PackHeader'
 
 interface Current {
   key: string
@@ -49,6 +50,7 @@ interface Props {
   initialQuestion: string | null
   /** `<session>~<turn>~<section>` from a Review "Try again in Drill" link. */
   from?: string | null
+  onStart: (pack: Pack) => void
 }
 
 /** "Pitch range 3.1 → 5.0 st (usual 5.4) · flat stretches 2 → 0": behaviour only, no verdict words. */
@@ -60,7 +62,7 @@ function voiceComparison(old: LastInfo, now: DrillAttempt['result']): string | n
   return bits.join(' \u00b7 ')
 }
 
-export default function Drill({ packId, initialQuestion, from = null }: Props) {
+export default function Drill({ packId, initialQuestion, from = null, onStart }: Props) {
   const fromRef = useMemo(() => parseFrom(from), [from])
   const [fromActive, setFromActive] = useState(false)
   const [last, setLast] = useState<LastInfo | null>(null)
@@ -286,13 +288,9 @@ export default function Drill({ packId, initialQuestion, from = null }: Props) {
 
   return (
     <div className="drill">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">Drill</p>
-          <h1 className="page-title">{pack ? pack.title : 'Drill'}</h1>
-          <p className="muted lede">Practise one question at a time. Each attempt you submit uses one Claude request.</p>
-        </div>
-      </div>
+      {/* "Answer by voice" is this page's main action, so Start is a secondary button here. */}
+      <PackHeader packId={packId} tab="drill" onStart={onStart} primary={false} />
+      <p className="muted lede drill-lede">Practise one question at a time. Each attempt you submit uses one Claude request.</p>
       {error && <div className="banner error">{error}</div>}
       <div className="drill-body">
         <aside className="card drill-list">

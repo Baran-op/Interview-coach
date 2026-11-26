@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, CATEGORY_LABEL, type Pack, type PrepResponse, type PrepSheet } from '../api'
+import PackHeader from '../components/PackHeader'
 
 const label = (key: string, labels?: Record<string, string>) => labels?.[key] ?? CATEGORY_LABEL[key] ?? key
 
@@ -38,7 +39,7 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
-export default function Prep({ packId }: { packId: string }) {
+export default function Prep({ packId, onStart }: { packId: string; onStart: (pack: Pack) => void }) {
   const [pack, setPack] = useState<Pack | null>(null)
   const [data, setData] = useState<PrepResponse | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,23 +66,21 @@ export default function Prep({ packId }: { packId: string }) {
 
   const sheet = data?.prep ?? null
   return (
+    <div className="pack-page">
+    <PackHeader packId={packId} tab="prep" onStart={onStart} />
     <div className="card prep">
-      <div className="review-head">
+      <div className="prep-toolbar">
         <div>
-          <h2>
-            <span className="eyebrow">Prep sheet</span>
-            {pack ? pack.title : 'Prep sheet'}
-          </h2>
+          <h2>Prep sheet</h2>
           {data?.created_at && <div className="muted small">Written {new Date(data.created_at).toLocaleString()}</div>}
         </div>
         <div className="actions">
-          <a className="button-link" href={`#/drill/${packId}`}>Drill</a>
           {pack && sheet && (
             <button type="button" onClick={() => download(`prep-${pack.title.replace(/\W+/g, '-')}.md`, prepMarkdown(pack, sheet, data?.labels))}>
               Download Markdown
             </button>
           )}
-          <button type="button" className={sheet ? '' : 'primary'} disabled={busy || !data} onClick={() => void write()}>
+          <button type="button" disabled={busy || !data} onClick={() => void write()}>
             {busy ? 'Writing…' : sheet ? 'Rewrite (costs 1 request)' : 'Write prep sheet (costs 1 request)'}
           </button>
         </div>
@@ -144,6 +143,7 @@ export default function Prep({ packId }: { packId: string }) {
           </ul>
         </>
       )}
+    </div>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Assumption, type Brief as BriefT, type BriefCategory, type BriefState, type CriterionDef, type FormatKind, type Pack } from '../api'
 import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
 import AutoTextarea from '../components/AutoTextarea'
+import PackHeader from '../components/PackHeader'
 
 const KIND_OPTIONS: DropdownOption<FormatKind>[] = [
   { value: 'conversation', label: 'Conversation', hint: 'One interviewer, question by question' },
@@ -45,7 +46,6 @@ function Section({ title, meta, children }: { title: string; meta?: string; chil
 }
 
 export default function Brief({ packId, generate, onStart }: { packId: string; generate?: boolean; onStart: (pack: Pack) => void }) {
-  const [pack, setPack] = useState<Pack | null>(null)
   const [state, setState] = useState<BriefState | null>(null)
   const [draft, setDraft] = useState<BriefT | null>(null)
   const [busy, setBusy] = useState<null | 'generating' | 'saving'>(null)
@@ -62,7 +62,6 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
   }
 
   useEffect(() => {
-    api.getPack(packId).then(setPack, (e: Error) => setError(e.message))
     api.getBrief(packId).then(load, (e: Error) => setError(e.message))
   }, [packId])
 
@@ -135,7 +134,12 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
   }
 
   if (!state || !draft) {
-    return <div className="card">{error ? <div className="banner error">{error}</div> : <p className="muted">Loading…</p>}</div>
+    return (
+      <div className="brief">
+        <PackHeader packId={packId} tab="brief" onStart={onStart} disabled />
+        <div className="card">{error ? <div className="banner error">{error}</div> : <p className="muted">Loading…</p>}</div>
+      </div>
+    )
   }
 
   const ro = state.is_default
@@ -167,34 +171,19 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
 
   return (
     <div className="brief">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">Interview brief</p>
-          <h1 className="page-title">{pack?.title ?? 'Interview brief'}</h1>
-          <p className="muted small">
-            {ORIGIN_LABEL[state.origin]}
-            {state.updated_at ? ` · updated ${new Date(state.updated_at).toLocaleString()}` : ''}
-            {draft.field ? ` · ${draft.field}` : ''}
-          </p>
-        </div>
-        <div className="actions">
-          <button
-            type="button"
-            className="primary"
-            disabled={!!busy}
-            onClick={() => {
-              if (dirty && !window.confirm('Start without saving your changes to the brief?')) return
-              // Fresh pack: its brief_meta (format, minutes) drives the timer.
-              api.getPack(packId).then(onStart, (e: Error) => setError(e.message))
-            }}
-          >
-            Start interview
-          </button>
-          <a className="button-link" href={`#/edit/${packId}`}>Materials</a>
-          <a className="button-link" href={`#/prep/${packId}`}>Prep</a>
-          <a className="button-link" href={`#/drill/${packId}`}>Drill</a>
-        </div>
-      </div>
+      <PackHeader
+        packId={packId}
+        tab="brief"
+        version={rev}
+        disabled={!!busy}
+        onStart={onStart}
+        confirmStart={() => !dirty || window.confirm('Start without saving your changes to the brief?')}
+      />
+      <p className="muted small brief-meta">
+        Interview brief · {ORIGIN_LABEL[state.origin]}
+        {state.updated_at ? ` · updated ${new Date(state.updated_at).toLocaleString()}` : ''}
+        {draft.field ? ` · ${draft.field}` : ''}
+      </p>
 
       {error && <div className="banner error">{error}</div>}
       {busy === 'generating' && <div className="banner">Writing the brief from your materials (a minute or so)…</div>}
@@ -261,7 +250,7 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
       )}
 
       <fieldset className="brief-sections" disabled={ro || !!busy}>
-        <Section title="Format" meta={`${f.kind}${f.kind === 'stations' ? ` · ${f.stations.length} × stations, ${stationMinutes} min` : f.total_minutes ? ` · ${f.total_minutes} min` : ''}`}>
+        <Section title="Format" meta={`${KIND_OPTIONS.find((k) => k.value === f.kind)?.label ?? f.kind}${f.kind === 'stations' ? ` · ${f.stations.length} stations, ${stationMinutes} min` : f.total_minutes ? ` · ${f.total_minutes} min` : ''}`}>
           <div className="row">
             <label>
               Field

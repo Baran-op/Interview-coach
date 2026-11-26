@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, CATEGORY_LABEL, DEFAULT_CRITERIA, type HistorySession, type Pack, type PackHistory } from '../api'
 import { Chevron } from '../components/Dropdown'
-import { packSummary } from './Setup'
+import { packSummary } from '../packInfo'
 
 /** A session's criteria as [key, name] pairs (the standard four for an unscored one). */
 const criteriaOf = (s: HistorySession | undefined): { key: string; label: string }[] =>
@@ -157,7 +157,7 @@ export default function History({ onStart }: Props) {
                 </div>
               </div>
               <div className="actions">
-                <button className="primary" onClick={() => onStart(pack)}>
+                <button onClick={() => onStart(pack)}>
                   Run again
                 </button>
                 <a className="button-link" href={`#/drill/${pack.id}`}>

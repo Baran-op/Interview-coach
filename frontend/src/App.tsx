@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type Pack } from './api'
 import Setup from './pages/Setup'
+import Home from './pages/Home'
 import Interview from './pages/Interview'
 import Review, { REVIEW_TABS, type ReviewTab } from './pages/Review'
 import History from './pages/History'
@@ -9,6 +10,7 @@ import Prep from './pages/Prep'
 import Brief from './pages/Brief'
 
 type Screen =
+  | { name: 'home' }
   | { name: 'setup'; editPackId?: string }
   | { name: 'interview'; pack: Pack }
   | { name: 'review'; sessionId: string; tab: ReviewTab; q: number | null }
@@ -17,7 +19,7 @@ type Screen =
   | { name: 'prep'; packId: string }
   | { name: 'brief'; packId: string; generate: boolean }
 
-// Tiny hash router: #/ (setup), #/edit/<pack id>, #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>[&from=<session>~<turn>~<section>], #/review/<session id>[?tab=answers|recording|voice[&q=<answer index>]],
+// Tiny hash router: #/ (home), #/new (new pack), #/edit/<pack id> (a pack's Materials tab), #/interview, #/review/<session id>, #/history, #/drill/<pack id>?q=<question>[&from=<session>~<turn>~<section>], #/review/<session id>[?tab=answers|recording|voice[&q=<answer index>]],
 // #/prep/<pack id>, #/brief/<pack id>[?generate=1].
 function fromHash(current: Screen): Screen {
   const hash = window.location.hash
@@ -39,13 +41,14 @@ function fromHash(current: Screen): Screen {
   if (brief) return { name: 'brief', packId: brief[1], generate: new URLSearchParams(brief[2] ?? '').get('generate') === '1' }
   const edit = hash.match(/^#\/edit\/([\w-]+)/)
   if (edit) return { name: 'setup', editPackId: edit[1] }
+  if (hash.startsWith('#/new')) return { name: 'setup' }
   if (hash.startsWith('#/history')) return { name: 'history' }
   if (hash.startsWith('#/interview') && current.name === 'interview') return current
-  return { name: 'setup' }
+  return { name: 'home' }
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(() => fromHash({ name: 'setup' }))
+  const [screen, setScreen] = useState<Screen>(() => fromHash({ name: 'home' }))
   const [healthProblems, setHealthProblems] = useState<string[]>([])
 
   useEffect(() => {
@@ -60,6 +63,10 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  const start = (pack: Pack) => go({ name: 'interview', pack }, '#/interview')
+  // Home covers the pack pages; History covers the session review.
+  const section = ['history', 'review'].includes(screen.name) ? 'history' : 'home'
 
   const go = (s: Screen, hash: string) => {
     setScreen(s)
@@ -80,10 +87,10 @@ export default function App() {
         {screen.name === 'interview' && <span className="topbar-context">{screen.pack.title}</span>}
         {screen.name !== 'interview' && (
           <nav className="nav">
-            <a href="#/" className={screen.name === 'setup' ? 'active' : ''}>
-              New interview
+            <a href="#/" className={section === 'home' ? 'active' : ''} aria-current={section === 'home' ? 'page' : undefined}>
+              Home
             </a>
-            <a href="#/history" className={screen.name === 'history' ? 'active' : ''}>
+            <a href="#/history" className={section === 'history' ? 'active' : ''} aria-current={section === 'history' ? 'page' : undefined}>
               History
             </a>
           </nav>
@@ -97,6 +104,7 @@ export default function App() {
         </div>
       )}
       <main>
+        {screen.name === 'home' && <Home onStart={start} />}
         {screen.name === 'setup' && (
           <Setup
             key={screen.editPackId ?? 'new'}
@@ -105,8 +113,8 @@ export default function App() {
           />
         )}
         {screen.name === 'history' && <History onStart={(pack) => go({ name: 'interview', pack }, '#/interview')} />}
-        {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} from={screen.from} />}
-        {screen.name === 'prep' && <Prep key={screen.packId} packId={screen.packId} />}
+        {screen.name === 'drill' && <Drill key={screen.packId} packId={screen.packId} initialQuestion={screen.q} from={screen.from} onStart={start} />}
+        {screen.name === 'prep' && <Prep key={screen.packId} packId={screen.packId} onStart={start} />}
         {screen.name === 'brief' && <Brief
             key={screen.packId}
             packId={screen.packId}
@@ -116,7 +124,7 @@ export default function App() {
         {screen.name === 'interview' && (
           <Interview
             pack={screen.pack}
-            onExit={() => go({ name: 'setup' }, '#/')}
+            onExit={() => go({ name: 'home' }, '#/')}
             onReview={(sessionId) => go({ name: 'review', sessionId, tab: 'summary', q: null }, `#/review/${sessionId}`)}
           />
         )}

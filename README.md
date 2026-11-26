@@ -95,16 +95,18 @@ still bleed into your answer.
 
 ## Using it
 
-1. On **Setup**, add your **materials**: upload files (.pdf, .txt or .md, several at once), paste text, or
+1. **Home** (`#/`) lists your saved packs and recent sessions. Click **+ New pack** (`#/new`) and add your **materials**: upload files (.pdf, .txt or .md, several at once), paste text, or
    draft company notes from the web. Anything goes: the job advert, your CV, company notes, a person
    specification or mark scheme, a description of the interview format. Each material has a name and a
    **kind** (job, about you, organisation, format, other), guessed from the file name; change it if the
    guess is wrong. A pack holds up to 150,000 characters of text (the running total is shown); only the
-   extracted text is kept, never the file. Then choose the type, number of questions, difficulty, style,
-   interviewer name and **voice** (US or UK English, female or male).
-2. Click **Save pack**. For a new pack Setup then offers **Write the interview brief (1 Claude request)**
+   extracted text is kept, never the file. Then set the **Interview** (type, stage, length, difficulty),
+   the **Interviewer** (name, style, **voice**: US or UK English, female or male) and **Recording**.
+2. Click **Save pack**. In its place the page then offers **Write the interview brief (1 Claude request)**
    or **Skip: use the standard interview** (see "The interview brief" below). Chrome asks for the microphone the first time.
-   The pack is saved, so you can start it again later from **Saved packs**. A new pack starts
+   The pack is saved, so you can start it again later from **Saved packs** on Home (**Start**, **Open** for the pack's pages,
+   and **⋯** for Interview brief, Prep, Drill and Edit). A pack's pages share one header with tabs
+   **Materials | Brief | Prep | Drill** and **Start interview**; Materials (`#/edit/<pack id>`) edits the pack. A new pack starts
    with copies of the latest pack's "about you" materials (your CV).
 3. The interviewer greets you and asks the first question. When the dot turns blue it's
    your turn: answer out loud. Your turn ends when:
@@ -148,14 +150,16 @@ The chips under each interviewer message show the expression tags parsed from th
   pauses the recording.
 - When the interview ends (the interviewer says goodbye, or you press **End interview**),
   the recording is uploaded and the **Review** page opens at `#/review/<session id>`. You
-  can bookmark it, and recent sessions are listed on the Setup page.
-- **Review** has:
-  - the recording, with Q1, Q2… markers that jump to each question;
-  - the transcript (click a line to jump there);
-  - the feedback report: overall score, the top 3 things to fix, filler words, average
-    answer length, and for each main question scores from 1 to 5 on relevance, structure
-    (STAR), specificity and evidence, a delivery line (length against the target for the question type, words per minute, I vs we, numbers, fillers, hedges, long pauses, and voice flags: flat, lively or trailing off, against your own usual) with tips and a stronger model answer;
-  - downloads of the recording (.webm) and the report (.md).
+  can bookmark it, and recent sessions are listed on Home.
+- **Review** has the overall score (with a "partial" badge when too few answers count) and the top 3 things
+  to fix at the top, then tabs (`?tab=answers|recording|voice`; Summary is the default):
+  - **Summary**: the report summary (**Read more** when long), the comparison with your previous attempt,
+    "Since last time", filler words and average answer length;
+  - **Answers**: for each main question scores from 1 to 5 on relevance, structure
+    (STAR), specificity and evidence, with a small video pinned beside them so **Play from** works, and delivery tiles (length against the target for the question type, words per minute, I vs we, numbers, fillers, hedges, long pauses, voice flags: flat, lively or trailing off, against your own usual, and eye contact) with tips and a stronger model answer;
+  - **Recording & transcript**: the recording with Q1, Q2… markers that jump to each question, and the transcript (click a line to jump there);
+  - **Voice**: see below;
+  - a **Download** menu for the recording (.webm) and the report (.md), and **Delete** under **⋯**.
 - **The report takes one Claude request per session.** Claude does the judging (scores, tips,
   model answers). Filler words, answer length and the overall score are computed locally, so
   they're consistent between sessions. The overall score is the average of the answer scores.
@@ -207,7 +211,7 @@ or one per station; a drill attempt is scored with the brief's criteria and show
 category's target. A station with a scenario longer than 5 minutes has no target length.
 
 Anything Claude guessed rather than read is listed under **To confirm** with a question. Answer it (your
-answers are sent along when you regenerate) or confirm it; the count shows on the pack in Setup. Everything
+answers are sent along when you regenerate) or confirm it; the count shows as a badge on the pack (Home and the pack header). Everything
 is editable and saving is free. When your materials change, the page says so: **Regenerate** (1 request) or
 **Keep it**. Once a pack has a scored session its criteria and categories are frozen: changing them asks
 first, because History then only compares sessions scored the same way. **Use the standard interview**
@@ -245,9 +249,9 @@ deletes the brief and goes back to today's standard interview.
   sessions. Deleting also removes the recordings.
 - The Review page compares each report with your **previous attempt** at the same pack
   (overall score, each criterion, filler words; partial sessions are skipped), and has **Run this pack again**.
-- **Prep sheet** (`#/prep/<pack id>`, **Prep** button in Setup's saved packs and History): likely questions, CV against the job (every requirement with CV evidence or marked missing), 6-8 STAR stories built only from your CV (with [placeholders]) and questions to ask. Each likely question has a **Practise** button that opens Drill, and the questions also join the Drill list. Writing or rewriting costs one Claude request; the page warns when the pack changed since the sheet was written. Download as Markdown.
+- **Prep sheet** (`#/prep/<pack id>`, the pack's **Prep** tab, or Prep in History): likely questions, CV against the job (every requirement with CV evidence or marked missing), 6-8 STAR stories built only from your CV (with [placeholders]) and questions to ask. Each likely question has a **Practise** button that opens Drill, and the questions also join the Drill list. Writing or rewriting costs one Claude request; the page warns when the pack changed since the sheet was written. Download as Markdown.
 - **Drill** (`#/drill/<pack id>?q=<question>`): practise one question at a time. Open it with the
-  **Drill** button in Setup (saved packs) or History, or **Practise this question** under an answer
+  pack's **Drill** tab or History, or **Practise this question** under an answer
   in Review. The left list has starter questions, weak questions from your reports (marked "weak")
   and your own, each with best and latest score chips. Hear the question, then answer by voice
   (Done-only: pauses never end it, press Done) or typed. **Each attempt uses one Claude request**

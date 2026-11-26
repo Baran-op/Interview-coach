@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, MAX_PACK_CHARS, type BriefMeta, type Material, type Pack, type PackInput, type SessionListItem } from '../api'
+import { api, MAX_PACK_CHARS, type BriefMeta, type Material, type Pack, type PackInput } from '../api'
 import { getRecordMode, setRecordMode, type RecordMode } from '../audio/recorder'
 import { faceModelAvailable, getFaceTracking, setFaceTracking } from '../face/FaceTracker'
 
 import Dropdown, { Chevron, type DropdownOption } from '../components/Dropdown'
 import Materials, { newKey, toSave, totalChars, type MaterialRow } from '../components/Materials'
+import PackHeader from '../components/PackHeader'
 
 type Opts = PackInput['options']
 const TYPE_OPTIONS: DropdownOption<Opts['interview_type']>[] = [
@@ -69,30 +70,21 @@ function voiceLabel(id: string) {
 const toRows = (ms: Material[]): MaterialRow[] =>
   ms.map((m) => ({ key: newKey(), name: m.name, kind: m.kind, source: m.source, text: m.text, synthetic: m.synthetic }))
 const candidateCopies = (ms: Material[] | undefined) => toRows((ms ?? []).filter((m) => m.kind === 'candidate')).map((r) => ({ ...r, synthetic: false }))
-
-export function packSummary(p: Pack) {
-  const o = p.options
-  const m = p.brief_meta
-  if (m?.exists && m.kind === 'stations') {
-    const mins = [...new Set(m.stations.map((s) => s.minutes))]
-    const each = mins.length === 1 ? `${m.stations.length} × ${mins[0]} min` : `${m.stations.length} stations, ${m.total_minutes} min`
-    return `stations · ${each} · ${o.difficulty} · ${o.style}`
-  }
-  const length = o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`
-  return `${o.stage ?? 'full'} · ${o.interview_type} · ${length} · ${o.difficulty} · ${o.style}`
-}
+/** What a save would send, to tell whether the form has unsaved edits. */
+const snapshot = (form: Form, rows: MaterialRow[]) => JSON.stringify({ form, materials: toSave(rows) })
+const label = <T extends string>(options: DropdownOption<T>[], v: T) => options.find((o) => o.value === v)?.label ?? v
 
 interface Props {
   onStart: (pack: Pack) => void
-  /** Open this pack for editing (#/edit/<id>). */
+  /** Open this pack for editing (#/edit/<id>): the pack's Materials tab. Without it, a new pack (#/new). */
   editPackId?: string
 }
 
 export default function Setup({ onStart, editPackId }: Props) {
-  const [packs, setPacks] = useState<Pack[]>([])
   const [form, setForm] = useState<Form>(EMPTY)
   const [rows, setRows] = useState<MaterialRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<string | null>(null) // snapshot of the pack as loaded, for "unsaved edits"
   const [meta, setMeta] = useState<BriefMeta | null>(null) // the edited pack's brief, if any
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -100,28 +92,22 @@ export default function Setup({ onStart, editPackId }: Props) {
   const [recordMode, setMode] = useState<RecordMode>(getRecordMode)
   const [faceOn, setFaceOn] = useState(getFaceTracking)
   const [faceModel, setFaceModel] = useState<boolean | null>(null) // null: still checking
-  const [sessions, setSessions] = useState<SessionListItem[]>([])
   const [saved, setSaved] = useState<Pack | null>(null) // a new pack: offer to write its brief before starting
 
   useEffect(() => {
     void faceModelAvailable().then(setFaceModel)
     api
-      .listSessions(8)
-      .then(setSessions)
-      .catch(() => {})
-    api
       .voices()
       .then((v) => setVoices(v.voices))
       .catch(() => {})
-    api
-      .listPacks()
-      .then((list) => {
-        setPacks(list)
-        // The CV is saved once and reused: a new pack starts with the latest pack's candidate materials.
-        if (list.length > 0 && !editPackId)
-          api.getPack(list[0].id).then((p) => setRows((r) => (r.length ? r : candidateCopies(p.materials))), () => {})
-      })
-      .catch((e: Error) => setError(e.message))
+    // The CV is saved once and reused: a new pack starts with the latest pack's candidate materials.
+    if (!editPackId)
+      api
+        .listPacks()
+        .then((list) => {
+          if (list.length > 0) api.getPack(list[0].id).then((p) => setRows((r) => (r.length ? r : candidateCopies(p.materials))), () => {})
+        })
+        .catch((e: Error) => setError(e.message))
   }, [])
 
   useEffect(() => {
@@ -133,20 +119,21 @@ export default function Setup({ onStart, editPackId }: Props) {
     setForm((f) => ({ ...f, options: { ...f.options, [key]: value } }))
 
   const editPack = (p: Pack) => {
+    const f: Form = { title: p.title, role: p.role, company: p.company, options: { ...EMPTY.options, ...p.options } }
+    const r = toRows(p.materials ?? [])
     setEditingId(p.id)
     setMeta(p.brief_meta ?? null)
-    setForm({ title: p.title, role: p.role, company: p.company, options: { ...EMPTY.options, ...p.options } })
-    setRows(toRows(p.materials ?? []))
+    setForm(f)
+    setRows(r)
+    setLoaded(snapshot(f, r))
     window.scrollTo({ top: 0 })
   }
-  const openPack = (p: Pack) => api.getPack(p.id).then(editPack, (e: Error) => setError(e.message))
 
+  const dirty = !!editingId && loaded != null && snapshot(form, rows) !== loaded
+
+  // Discards the edits, as before; Home is where the saved packs are now.
   const stopEditing = () => {
-    setEditingId(null)
-    setMeta(null)
-    setForm(EMPTY)
-    setRows((r) => r.filter((m) => m.kind === 'candidate').map((m) => ({ ...m, key: newKey(), synthetic: false })))
-    if (window.location.hash.startsWith('#/edit/')) window.history.replaceState(null, '', '#/')
+    window.location.hash = '#/'
   }
 
   const save = async (asNew: boolean) => {
@@ -181,33 +168,39 @@ export default function Setup({ onStart, editPackId }: Props) {
   const briefLength = stations ? `${stations.stations.length} stations, ${stations.total_minutes} min (from the brief)` : ''
   const settingsSummary = (
     stations
-      ? [briefLength, o.difficulty, o.style]
+      ? [briefLength, `${label(DIFFICULTY_OPTIONS, o.difficulty)} difficulty`, `${label(STYLE_OPTIONS, o.style)} interviewer`]
       : [
-          STAGE_OPTIONS.find((s) => s.value === o.stage)?.label,
-          TYPE_OPTIONS.find((t) => t.value === o.interview_type)?.label,
+          label(STAGE_OPTIONS, o.stage),
+          label(TYPE_OPTIONS, o.interview_type),
           o.minutes ? `${o.minutes} min` : `${o.num_questions} questions`,
-          o.difficulty,
-          o.style,
+          `${label(DIFFICULTY_OPTIONS, o.difficulty)} difficulty`,
+          `${label(STYLE_OPTIONS, o.style)} interviewer`,
         ]
   ).join(' · ')
 
   return (
     <div className="setup">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">{editingId ? 'Editing pack' : 'Mock interview'}</p>
-          <h1 className="page-title">{editingId ? form.title || 'Edit pack' : 'Prepare a new interview'}</h1>
-          <p className="muted lede">
-            Add the job advert, your CV and anything else you have. {o.interviewer_name || 'The interviewer'} will run a
-            realistic interview from them, and you get a scored report afterwards.
-          </p>
+      {editPackId ? (
+        <PackHeader
+          packId={editPackId}
+          tab="materials"
+          primary={false}
+          disabled={saving}
+          onStart={onStart}
+          confirmStart={() => !dirty || window.confirm('Start without saving your changes to this pack?')}
+        />
+      ) : (
+        <div className="page-head">
+          <div>
+            <p className="eyebrow">New pack</p>
+            <h1 className="page-title">Prepare a new interview</h1>
+            <p className="muted lede">
+              Add the job advert, your CV and anything else you have. {o.interviewer_name || 'The interviewer'} will run a
+              realistic interview from them, and you get a scored report afterwards.
+            </p>
+          </div>
         </div>
-        {editingId && (
-          <button type="button" className="ghost" onClick={stopEditing}>
-            Cancel editing
-          </button>
-        )}
-      </div>
+      )}
 
       <form className="setup-form" onSubmit={submit}>
         <section className="card section">
@@ -245,197 +238,151 @@ export default function Setup({ onStart, editPackId }: Props) {
             <span className="summary-meta muted small">{settingsSummary}</span>
             <Chevron />
           </summary>
-          <div className="settings-grid">
-            {stations ? (
-              <div className="field wide">
-                <span className="field-label">Format</span>
-                <span>
-                  {briefLength}. <a href={`#/brief/${editingId}`}>Change it in the interview brief</a>
-                </span>
+          <div className="settings-groups">
+            <fieldset className="settings-group">
+              <legend>Interview</legend>
+              <div className="settings-grid">
+                {stations ? (
+                  <div className="field wide">
+                    <span className="field-label">Format</span>
+                    <span>
+                      {briefLength}. <a href={`#/brief/${editingId}`}>Change it in the interview brief</a>
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="field">
+                      <span className="field-label">Type</span>
+                      <Dropdown ariaLabel="Interview type" value={o.interview_type} options={TYPE_OPTIONS} onChange={(v) => setOpt('interview_type', v)} />
+                    </div>
+                    <div className="field">
+                      <span className="field-label">Stage</span>
+                      <Dropdown ariaLabel="Interview stage" value={o.stage} options={STAGE_OPTIONS} onChange={(v) => setOpt('stage', v)} />
+                    </div>
+                    <div className="field">
+                      <span className="field-label">Length</span>
+                      <span className="length">
+                        <Dropdown
+                          ariaLabel="Length in"
+                          value={o.minutes ? 'minutes' : 'questions'}
+                          options={LENGTH_OPTIONS}
+                          onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
+                        />
+                        {o.minutes ? (
+                          <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
+                        ) : (
+                          <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
+                        )}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="field">
+                  <span className="field-label">Difficulty</span>
+                  <Dropdown ariaLabel="Difficulty" value={o.difficulty} options={DIFFICULTY_OPTIONS} onChange={(v) => setOpt('difficulty', v)} />
+                </div>
               </div>
-            ) : (
-              <>
+            </fieldset>
+
+            <fieldset className="settings-group">
+              <legend>Interviewer</legend>
+              <div className="settings-grid">
+                <label>
+                  Name
+                  <input value={o.interviewer_name} onChange={(e) => setOpt('interviewer_name', e.target.value)} />
+                </label>
                 <div className="field">
-                  <span className="field-label">Type</span>
-                  <Dropdown ariaLabel="Interview type" value={o.interview_type} options={TYPE_OPTIONS} onChange={(v) => setOpt('interview_type', v)} />
+                  <span className="field-label">Style</span>
+                  <Dropdown ariaLabel="Interviewer style" value={o.style} options={STYLE_OPTIONS} onChange={(v) => setOpt('style', v)} />
                 </div>
                 <div className="field">
-                  <span className="field-label">Stage</span>
-                  <Dropdown ariaLabel="Interview stage" value={o.stage} options={STAGE_OPTIONS} onChange={(v) => setOpt('stage', v)} />
+                  <span className="field-label">Voice</span>
+                  <Dropdown
+                    ariaLabel="Voice"
+                    value={o.voice}
+                    options={voices.map((v) => ({ value: v, label: voiceLabel(v) }))}
+                    onChange={(v) => setOpt('voice', v)}
+                  />
                 </div>
-                <div className="field">
-                  <span className="field-label">Length</span>
-                  <span className="length">
-                    <Dropdown
-                      ariaLabel="Length in"
-                      value={o.minutes ? 'minutes' : 'questions'}
-                      options={LENGTH_OPTIONS}
-                      onChange={(v) => setOpt('minutes', v === 'minutes' ? 20 : null)}
+              </div>
+            </fieldset>
+
+            <fieldset className="settings-group">
+              <legend>Recording</legend>
+              <div className="settings-grid">
+                <div className="field wide">
+                  <span className="field-label">Record the session</span>
+                  <Dropdown
+                    ariaLabel="Record the session"
+                    value={recordMode}
+                    options={RECORD_OPTIONS}
+                    onChange={(m) => {
+                      setMode(m)
+                      setRecordMode(m)
+                    }}
+                  />
+                </div>
+                <div className="field wide">
+                  <label className="inline">
+                    <input
+                      type="checkbox"
+                      checked={faceOn && faceModel === true}
+                      disabled={faceModel !== true}
+                      onChange={(e) => {
+                        setFaceOn(e.target.checked)
+                        setFaceTracking(e.target.checked)
+                      }}
                     />
-                    {o.minutes ? (
-                      <input aria-label="Minutes" type="number" min={5} max={120} step={5} value={o.minutes} onChange={(e) => setOpt('minutes', Number(e.target.value))} />
-                    ) : (
-                      <input aria-label="Questions" type="number" min={1} max={20} value={o.num_questions} onChange={(e) => setOpt('num_questions', Number(e.target.value))} />
-                    )}
+                    Track eye contact and expression (stays on this computer)
+                  </label>
+                  <span className="hint">
+                    {faceModel === false
+                      ? 'Face model not installed: run scripts/fetch_face_model.sh once (see the README). Everything else works without it.'
+                      : 'Needs the webcam in the recording ("Webcam + audio" or "Avatar and webcam side by side"). Only numbers are kept, never video frames.'}
                   </span>
                 </div>
-              </>
-            )}
-            <div className="field">
-              <span className="field-label">Difficulty</span>
-              <Dropdown ariaLabel="Difficulty" value={o.difficulty} options={DIFFICULTY_OPTIONS} onChange={(v) => setOpt('difficulty', v)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Style</span>
-              <Dropdown ariaLabel="Interviewer style" value={o.style} options={STYLE_OPTIONS} onChange={(v) => setOpt('style', v)} />
-            </div>
-            <label>
-              Interviewer
-              <input value={o.interviewer_name} onChange={(e) => setOpt('interviewer_name', e.target.value)} />
-            </label>
-            <div className="field">
-              <span className="field-label">Voice</span>
-              <Dropdown
-                ariaLabel="Voice"
-                value={o.voice}
-                options={voices.map((v) => ({ value: v, label: voiceLabel(v) }))}
-                onChange={(v) => setOpt('voice', v)}
-              />
-            </div>
-            <div className="field wide">
-              <span className="field-label">Recording</span>
-              <Dropdown
-                ariaLabel="Record the session"
-                value={recordMode}
-                options={RECORD_OPTIONS}
-                onChange={(m) => {
-                  setMode(m)
-                  setRecordMode(m)
-                }}
-              />
-            </div>
-            <div className="field wide">
-              <label className="inline">
-                <input
-                  type="checkbox"
-                  checked={faceOn && faceModel === true}
-                  disabled={faceModel !== true}
-                  onChange={(e) => {
-                    setFaceOn(e.target.checked)
-                    setFaceTracking(e.target.checked)
-                  }}
-                />
-                Track eye contact and expression (stays on this computer)
-              </label>
-              <span className="hint">
-                {faceModel === false
-                  ? 'Face model not installed: run scripts/fetch_face_model.sh once (see the README). Everything else works without it.'
-                  : 'Needs the webcam in the recording ("Webcam + audio" or "Avatar and webcam side by side"). Only numbers are kept, never video frames.'}
-              </span>
-            </div>
+              </div>
+            </fieldset>
           </div>
         </details>
 
         {error && <div className="banner error">{error}</div>}
-        {saved && (
-          <div className="banner confirm brief-offer">
-            <span>
+        {saved ? (
+          // The brief prompt takes the Save button's place once the pack is saved.
+          <div className="card brief-offer" role="status">
+            <p>
               <strong>Pack saved.</strong> An interview brief fits the interview to your materials: the format (a conversation, timed
               stations or a panel), the criteria (your mark scheme, if you added one) and what they will probe.
-            </span>
-            <a className="button-link primary" href={`#/brief/${saved.id}?generate=1`}>
-              Write the interview brief (1 Claude request)
-            </a>
-            <button type="button" onClick={() => onStart(saved)}>
-              Skip: use the standard interview
-            </button>
-          </div>
-        )}
-        <div className="form-actions">
-          <button type="submit" className="primary large" disabled={saving || !!saved || totalChars(rows) > MAX_PACK_CHARS}>
-            {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Save pack'}
-            {!saving && <span aria-hidden> →</span>}
-          </button>
-          {editingId && (
-            <button type="button" disabled={saving} onClick={() => void save(true)}>
-              Save as a new pack
-            </button>
-          )}
-        </div>
-      </form>
-
-      <aside className="sidebar">
-        <section className="card">
-          <h2 className="side-title">
-            Saved packs <span className="count">{packs.length}</span>
-          </h2>
-          {packs.length === 0 && <p className="muted small empty">Packs you save appear here so you can rerun them.</p>}
-          <div className="pack-list">
-            {packs.map((p) => (
-              <div key={p.id} className={`pack ${editingId === p.id ? 'current' : ''}`}>
-                <div className="pack-info">
-                  <strong>{p.title}</strong>
-                  <div className="muted small">{packSummary(p)}</div>
-                  {p.brief_meta?.exists && (p.brief_meta.to_confirm > 0 || p.brief_meta.stale) && (
-                    <div className="small">
-                      <a className="subtle-link" href={`#/brief/${p.id}`}>
-                        {[
-                          p.brief_meta.to_confirm > 0 && `${p.brief_meta.to_confirm} assumption${p.brief_meta.to_confirm === 1 ? '' : 's'} to confirm`,
-                          p.brief_meta.stale && 'brief out of date',
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div className="pack-actions">
-                  <a className="button-link small" href={`#/brief/${p.id}`}>
-                    Interview brief
-                  </a>
-                  <a className="button-link small" href={`#/prep/${p.id}`}>
-                    Prep
-                  </a>
-                  <a className="button-link small" href={`#/drill/${p.id}`}>
-                    Drill
-                  </a>
-                  <button type="button" className="small ghost" onClick={() => void openPack(p)}>
-                    Edit
-                  </button>
-                  <button type="button" className="primary small" onClick={() => onStart(p)}>
-                    Start
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-        {sessions.length > 0 && (
-          <section className="card">
-            <h2 className="side-title">
-              Recent sessions
-              <a className="small subtle-link" href="#/history">
-                All history →
+            </p>
+            <div className="brief-offer-actions">
+              <a className="button-link primary" href={`#/brief/${saved.id}?generate=1`}>
+                Write the interview brief (1 Claude request)
               </a>
-            </h2>
-            <div className="session-list">
-              {sessions.map((s) => (
-                <a key={s.id} className="session-link" href={`#/review/${s.id}`}>
-                  <span className="session-info">
-                    <strong>{s.pack_title}</strong>
-                    <span className="muted small">
-                      {new Date(s.started_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </span>
-                  <span className="score-chip">
-                    {s.overall_score != null ? s.overall_score.toFixed(1) : s.report_status === 'pending' ? '…' : '–'}
-                  </span>
-                </a>
-              ))}
+              <button type="button" onClick={() => onStart(saved)}>
+                Skip: use the standard interview
+              </button>
             </div>
-          </section>
+          </div>
+        ) : (
+          <div className="form-actions">
+            <button type="submit" className="primary large" disabled={saving || totalChars(rows) > MAX_PACK_CHARS}>
+              {saving ? 'Saving…' : editingId ? 'Save changes & start' : 'Save pack'}
+              {!saving && <span aria-hidden> →</span>}
+            </button>
+            {editingId && (
+              <button type="button" disabled={saving} onClick={() => void save(true)}>
+                Save as a new pack
+              </button>
+            )}
+            {editingId && (
+              <button type="button" className="ghost" onClick={stopEditing}>
+                Cancel editing
+              </button>
+            )}
+            {dirty && <span className="small unsaved">Unsaved changes</span>}
+          </div>
         )}
-      </aside>
+      </form>
     </div>
   )
 }

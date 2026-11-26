@@ -676,7 +676,7 @@ export default function Interview({ pack, onExit, onReview }: Props) {
             {saveFailed && <button onClick={() => void saveSession()}>Retry saving</button>}
             {saveFailed && pendingBlob.current && <button onClick={downloadRecording}>Download recording</button>}
             {sessionRef.current && <button onClick={() => onReview(sessionRef.current!)}>Go to review</button>}
-            <button onClick={onExit}>Back to setup</button>
+            <button onClick={onExit}>Back to Home</button>
           </>
         )}
       </div>
