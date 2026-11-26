@@ -148,15 +148,27 @@ export default function Drill({ packId, initialQuestion, from = null, onStart }:
   // Voice and the avatar are optional extras; typing always works.
   useEffect(() => {
     let cancelled = false
-    void api
-      .health()
-      .then((h) => !cancelled && setVoiceReady(h.voice_ready))
-      .catch(() => {})
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // Whisper and Kokoro load in the background after the backend starts; keep asking until they're ready,
+    // or the "Answer by voice" button never appears when Drill is opened early.
+    const checkVoice = () =>
+      void api
+        .health()
+        .then((h) => {
+          if (cancelled) return
+          setVoiceReady(h.voice_ready)
+          if (!h.voice_ready) timer = setTimeout(checkVoice, 3000)
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(checkVoice, 3000)
+        })
+    checkVoice()
     void avatarAvailable().then((ok) => {
       if (ok && !cancelled) setAvatarCtx(player().ctx)
     })
     return () => {
       cancelled = true
+      clearTimeout(timer)
       avatarRef.current = null
       void listenerRef.current?.destroy()
       playerRef.current?.destroy()
@@ -373,6 +385,7 @@ export default function Drill({ packId, initialQuestion, from = null, onStart }:
                     </button>
                   ))}
               </div>
+              {!voiceReady && <p className="muted small">Voice answers appear once speech recognition has loaded…</p>}
               {fromActive && fromRef && <LastTime from={fromRef} onInfo={setLast} />}
               {phase === 'listening' && <p className="muted small">Listening. Pauses never end it; press Done when finished.</p>}
               {notice && <div className="banner">{notice}</div>}
