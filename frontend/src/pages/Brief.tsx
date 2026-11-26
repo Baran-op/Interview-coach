@@ -30,9 +30,10 @@ function Lines({ label, value, onChange, rows = 4 }: { label: string; value: str
   )
 }
 
-function Section({ title, meta, children, open }: { title: string; meta?: string; children: ReactNode; open?: boolean }) {
+/** A brief section: closed by default, its summary line says what is inside. */
+function Section({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) {
   return (
-    <details className="card section disclosure" open={open || undefined}>
+    <details className="card section disclosure">
       <summary>
         <span className="section-title">{title}</span>
         {meta && <span className="summary-meta muted small">{meta}</span>}
@@ -52,6 +53,7 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
   const [replace, setReplace] = useState(false)
   const autoRan = useRef(false)
   const [rev, setRev] = useState(0) // remounts editors with local state when the draft is replaced
+  const [scenarioShown, setScenarioShown] = useState<Set<number>>(new Set()) // stations whose empty scenario box was opened
 
   const load = (s: BriefState) => {
     setState(s)
@@ -204,7 +206,7 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
             specificity and evidence, run from your materials as they are. Write a brief to fit the interview to them: any
             profession, timed stations or a panel, your own mark scheme.
           </span>
-          <button type="button" className="primary" disabled={!!busy} onClick={() => void generate_(true)}>
+          <button type="button" disabled={!!busy} onClick={() => void generate_(true)}>
             Write the interview brief (1 Claude request)
           </button>
         </div>
@@ -234,16 +236,24 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
           <ul className="assumptions">
             {open.map((a) => (
               <li key={a.id}>
-                <div>
-                  <span className="chip">{a.section}</span> {a.text}
-                </div>
-                {a.question && <div className="muted small">{a.question}</div>}
-                <div className="assumption-answer">
-                  <input aria-label="Your answer" placeholder="Your answer (optional)" value={a.answer} onChange={(e) => setAssumption(a.id, { answer: e.target.value })} />
-                  <button type="button" className="small" disabled={!!busy} onClick={() => void confirmOne(a)}>
-                    Confirm
-                  </button>
-                </div>
+                {/* Compact row; expands to answer or confirm. Closing it keeps the typed answer (it lives in the draft). */}
+                <details className="disclosure assumption">
+                  <summary>
+                    <span className="chip">{a.section}</span>
+                    <span className="assumption-text">{a.text}</span>
+                    {a.answer.trim() && <span className="chip">answered</span>}
+                    <Chevron />
+                  </summary>
+                  <div className="assumption-body">
+                    {a.question && <p className="muted small">{a.question}</p>}
+                    <div className="assumption-answer">
+                      <input aria-label="Your answer" placeholder="Your answer (optional)" value={a.answer} onChange={(e) => setAssumption(a.id, { answer: e.target.value })} />
+                      <button type="button" className="small" disabled={!!busy} onClick={() => void confirmOne(a)}>
+                        Confirm
+                      </button>
+                    </div>
+                  </div>
+                </details>
               </li>
             ))}
           </ul>
@@ -251,7 +261,7 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
       )}
 
       <fieldset className="brief-sections" disabled={ro || !!busy}>
-        <Section title="Format" meta={`${f.kind}${f.kind === 'stations' ? ` · ${f.stations.length} × stations, ${stationMinutes} min` : f.total_minutes ? ` · ${f.total_minutes} min` : ''}`} open={!ro}>
+        <Section title="Format" meta={`${f.kind}${f.kind === 'stations' ? ` · ${f.stations.length} × stations, ${stationMinutes} min` : f.total_minutes ? ` · ${f.total_minutes} min` : ''}`}>
           <div className="row">
             <label>
               Field
@@ -307,7 +317,13 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
             <div className="brief-list">
               <h3>Stations</h3>
               {f.stations.map((s, i) => (
-                <div key={i} className="brief-item">
+                <details key={i} className="brief-item disclosure station-row">
+                  <summary>
+                    <span className="station-name">{s.name || `Station ${i + 1}`}</span>
+                    <span className="muted small">{s.minutes} min</span>
+                    <span className="chip">{categoryOptions.find((c) => c.value === s.category)?.label ?? s.category}</span>
+                    <Chevron />
+                  </summary>
                   <div className="row">
                     <label>
                       Name
@@ -326,14 +342,33 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
                     What it tests and how it runs
                     <AutoTextarea rows={2} maxLength={600} value={s.brief} onChange={(e) => setStation(i, { brief: e.target.value })} />
                   </label>
-                  <label>
-                    Scenario read out to you (optional)
-                    <AutoTextarea rows={3} maxLength={1500} value={s.scenario ?? ''} onChange={(e) => setStation(i, { scenario: e.target.value || null })} />
-                  </label>
-                  <button type="button" className="small ghost" onClick={() => setFormat({ stations: f.stations.filter((_, j) => j !== i) })}>
+                  {s.scenario || scenarioShown.has(i) ? (
+                    <label>
+                      Scenario read out to you (optional)
+                      <AutoTextarea
+                        rows={3}
+                        maxLength={1500}
+                        value={s.scenario ?? ''}
+                        autoFocus={!s.scenario && scenarioShown.has(i)}
+                        onChange={(e) => setStation(i, { scenario: e.target.value || null })}
+                      />
+                    </label>
+                  ) : (
+                    <button type="button" className="small ghost add-scenario" onClick={() => setScenarioShown((m) => new Set(m).add(i))}>
+                      + Add scenario
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="small ghost"
+                    onClick={() => {
+                      setScenarioShown(new Set())
+                      setFormat({ stations: f.stations.filter((_, j) => j !== i) })
+                    }}
+                  >
                     Remove station
                   </button>
-                </div>
+                </details>
               ))}
               {f.stations.length < 8 && (
                 <button
@@ -496,8 +531,9 @@ export default function Brief({ packId, generate, onStart }: { packId: string; g
       </fieldset>
 
       {!ro && (
-        <div className="form-actions brief-actions">
-          <button type="button" className="primary" disabled={!dirty || !!busy} onClick={() => void save(draft)}>
+        <div className="form-actions brief-actions" role="region" aria-label="Save the brief">
+          {dirty && <span className="small unsaved">Unsaved changes</span>}
+          <button type="button" className={dirty ? 'strong' : ''} disabled={!dirty || !!busy} onClick={() => void save(draft)}>
             {busy === 'saving' ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
           </button>
           {dirty && (
