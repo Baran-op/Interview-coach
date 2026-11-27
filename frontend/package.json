@@ -1,7 +1,10 @@
 {
   "name": "interview-coach-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Practise job interviews out loud with a talking 3D AI interviewer and get scored feedback",
+  "license": "MIT",
+  "repository": "github:Baran-op/Interview-coach",
   "type": "module",
   "scripts": {
     "dev": "vite",
