@@ -1,16 +1,35 @@
 # Interview Coach
 
-A local web app for practising interviews against a Claude-powered interviewer whose
-questions come from a real job description, your CV and company notes. See [SPEC.md](SPEC.md).
+**Practise job interviews out loud with a talking 3D interviewer, then get a scored feedback report.**
+Runs locally on your Mac. The interviewer is Claude (via your own subscription); speech
+recognition, voice and avatar are open-source models running on your machine.
 
-**Status: all five milestones built.** A 3D interviewer (three.js + TalkingHead) speaks with
-Kokoro's voice, lip-synced and with facial expressions. You answer out loud (Silero VAD in
-the browser, then Whisper). The session is recorded, and afterwards you get a Review page:
-playback with question markers, the transcript and a scored feedback report. History tracks
-your scores across re-runs of each interview pack.
+[Features](#features) · [Quick start](#one-time-setup-macos-apple-silicon) · [Using it](#using-it) · [API](#api-so-far) · [Contributing](CONTRIBUTING.md) · [Spec](SPEC.md)
 
-Personal use only: it runs on localhost with your Claude subscription. Don't deploy it or
-share it with other people.
+## Features
+
+- **Questions from your real context**: paste a job description, your CV and company notes;
+  the interviewer tailors its questions to them.
+- **Voice conversation**: you speak (Silero VAD + Whisper), it answers in Kokoro's voice.
+- **3D avatar** (three.js + TalkingHead) with lip-sync and facial expressions.
+- **Recording and review**: session playback with question markers, transcript and a
+  scored report (relevance, STAR structure, specificity, evidence, filler words, model answers).
+- **Packs and history**: re-run the same interview and track your scores over time.
+- **Timed interviews** and difficulty / style options.
+- **Private**: runs on localhost, data stays in `data/` on your machine. Only the text of
+  your interview goes to Claude.
+
+## Requirements
+
+- macOS on Apple Silicon (the speech models use MLX), about 8 GB RAM or more
+- Python 3.11, Node.js 20+, Chrome
+- A Claude subscription (the backend authenticates with a `claude setup-token` token)
+
+## Usage terms
+
+This is a single-user, local tool. It uses *your* Claude subscription token, so run it only
+for yourself on localhost: don't deploy it publicly or let other people use your token.
+Each person who wants to use it clones the repo and sets up their own `.env`.
 
 ## One-time setup (macOS, Apple Silicon)
 
@@ -235,3 +254,20 @@ are estimated from word length only when those are missing.
   interview, that session can't continue: start a new one.
 - To pin a model, set `INTERVIEWER_MODEL` in `.env`. Otherwise your plan's default model
   is used.
+
+## Troubleshooting
+
+- **Red banner / `/health` returns 503**: `ANTHROPIC_API_KEY` is set (unset it) or
+  `CLAUDE_CODE_OAUTH_TOKEN` is missing from `.env`.
+- **Interview runs in text mode**: the voice models are still downloading or loading;
+  wait until `/health` shows `"voice_ready": true`.
+- **Avatar missing**: add `frontend/public/avatars/interviewer.glb` (see setup step 5).
+- **Echo / the interviewer hears itself**: use headphones.
+
+## Contributing
+
+Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)
